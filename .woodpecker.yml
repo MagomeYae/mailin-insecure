@@ -1,5 +1,6 @@
 when:
   branch: master
+  event: push
   
 steps:
   test:
