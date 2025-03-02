@@ -17,8 +17,8 @@ spec:
     spec:
       containers:
         - name: mailin
-          image: "code.alienscience.org/alienscience/mailin:latest"
-          imagePullPolicy: Always
+          image: "code.alienscience.org/alienscience/mailin:v4"
+          imagePullPolicy: IfNotPresent
           ports:
             - name: smtp
               containerPort: 8025
