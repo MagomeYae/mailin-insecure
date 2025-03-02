@@ -143,8 +143,10 @@ fn auth(buf: &[u8]) -> IResult<&[u8], Cmd> {
 
 //---- Helper functions ---------------------------------------------------------
 
+type CmdResult<'a> = IResult<&'a [u8], (&'a [u8], &'a [u8])>;
+
 // Return a parser to match the given command
-fn cmd(cmd_tag: &[u8]) -> impl Fn(&[u8]) -> IResult<&[u8], (&[u8], &[u8])> + '_ {
+fn cmd(cmd_tag: &[u8]) -> impl Fn(&[u8]) -> CmdResult + '_ {
     move |buf: &[u8]| pair(tag_no_case(cmd_tag), space)(buf)
 }
 

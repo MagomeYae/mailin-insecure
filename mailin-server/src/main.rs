@@ -38,7 +38,7 @@ struct Handler<'a> {
     mailstore: MailStore,
 }
 
-impl<'a> mailin_embedded::Handler for Handler<'a> {
+impl mailin_embedded::Handler for Handler<'_> {
     fn helo(&mut self, ip: IpAddr, _domain: &str) -> Response {
         if ip == Ipv4Addr::new(127, 0, 0, 1) {
             return OK;
