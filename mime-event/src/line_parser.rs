@@ -52,10 +52,10 @@ fn content_disposition(buf: &[u8]) -> IResult<&[u8], Header> {
     })(buf)
 }
 
+type HeaderParams<'a> = IResult<&'a [u8], (&'a [u8], HashMap<&'a [u8], Vec<u8>>)>;
+
 // Parse a header field followed by parameters
-fn header_with_params(
-    header: &[u8],
-) -> impl Fn(&[u8]) -> IResult<&[u8], (&[u8], HashMap<&[u8], Vec<u8>>)> + '_ {
+fn header_with_params(header: &[u8]) -> impl Fn(&[u8]) -> HeaderParams + '_ {
     move |buf: &[u8]| {
         let preamble = match_header_key(header);
         let (i, value) = preceded(preamble, header_value_with_parameters)(buf)?;

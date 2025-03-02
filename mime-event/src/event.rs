@@ -69,7 +69,7 @@ pub(crate) fn mime_type(v: &[u8]) -> Mime {
     }
 }
 
-impl<'a> fmt::Debug for Event<'a> {
+impl fmt::Debug for Event<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Event::Start => write!(f, "Start"),

@@ -42,7 +42,7 @@ pub enum Header<'a> {
     End,
 }
 
-impl<'a> fmt::Debug for Header<'a> {
+impl fmt::Debug for Header<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Header::Unstructured(key, value) => {
