@@ -17,7 +17,7 @@ steps:
     settings:
       repo: code.alienscience.org/${CI_REPO_OWNER}/mailin
       registry: code.alienscience.org
-      tags: latest
+      tags: "v${CI_PIPELINE_NUMBER}"
       username: ${CI_REPO_OWNER}
       password:
         from_secret: forgejo_token
