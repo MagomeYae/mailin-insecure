@@ -129,7 +129,7 @@ fn write_response(mut writer: &mut dyn Write, res: &Response) -> Result<(), Erro
         .map_err(|e| Error::with_source("Cannot write response", e))
 }
 
-fn upgrade_tls(stream: TcpStream, ssl: Option<SslImpl>) -> Result<impl Stream, Error> {
+fn upgrade_tls<S: Stream>(stream: S, ssl: Option<SslImpl>) -> Result<impl Stream, Error> {
     if let Some(acceptor) = ssl {
         let ret = acceptor.accept(stream)?;
         Ok(ret)
@@ -138,10 +138,10 @@ fn upgrade_tls(stream: TcpStream, ssl: Option<SslImpl>) -> Result<impl Stream, E
     }
 }
 
-fn start_session<H: Handler>(
+fn start_session<H: Handler, S: Stream>(
     session_builder: &SessionBuilder,
     remote: IpAddr,
-    mut stream: BufStream<TcpStream>,
+    mut stream: BufStream<S>,
     ssl: Option<SslImpl>,
     handler: H,
 ) -> Result<(), Error> {

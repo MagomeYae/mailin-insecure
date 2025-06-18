@@ -7,7 +7,6 @@ use openssl::x509::X509;
 use std::fmt::Display;
 use std::fs::File;
 use std::io::Read;
-use std::net::TcpStream;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -24,7 +23,7 @@ impl From<ErrorStack> for Error {
     }
 }
 
-impl Stream for SslStream<TcpStream> {}
+impl<S: Stream> Stream for SslStream<S> {}
 
 impl SslImpl {
     pub fn setup(ssl_config: SslConfig) -> Result<Option<Self>, Error> {
@@ -57,7 +56,7 @@ impl SslImpl {
         Ok(ssl)
     }
 
-    pub fn accept(&self, stream: TcpStream) -> Result<impl Stream, Error> {
+    pub fn accept<S: Stream>(&self, stream: S) -> Result<impl Stream, Error> {
         let ret = self
             .acceptor
             .accept(stream)
