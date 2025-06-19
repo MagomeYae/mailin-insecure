@@ -152,12 +152,21 @@ fn main() -> Result<()> {
         print_usage(&args[0], &opts);
         return Ok(());
     }
-    let ssl_config = match (matches.opt_str(OPT_SSL_CERT), matches.opt_str(OPT_SSL_KEY)) {
-        (Some(cert_path), Some(key_path)) => SslConfig::SelfSigned {
+    let ssl_config = match (
+        matches.opt_str(OPT_SSL_CERT),
+        matches.opt_str(OPT_SSL_KEY),
+        matches.opt_str(OPT_SSL_CHAIN),
+    ) {
+        (Some(cert_path), Some(key_path), Some(chain_path)) => SslConfig::Trusted {
+            cert_path,
+            key_path,
+            chain_path,
+        },
+        (Some(cert_path), Some(key_path), None) => SslConfig::SelfSigned {
             cert_path,
             key_path,
         },
-        (_, _) => SslConfig::None,
+        (_, _, _) => SslConfig::None,
     };
     let domain = matches
         .opt_str(OPT_SERVER)
