@@ -49,7 +49,7 @@ use std::net::{SocketAddr, TcpListener, ToSocketAddrs};
 /// `Server` is used to configure and start the SMTP server
 pub struct Server<H>
 where
-    H: Handler + Clone + Send,
+    H: Handler,
 {
     handler: H,
     name: String,
@@ -62,7 +62,7 @@ where
 
 impl<H> Server<H>
 where
-    H: Handler + Clone + Send,
+    H: Handler,
 {
     /// Create a new server with the given Handler
     pub fn new(handler: H) -> Self {
@@ -134,7 +134,10 @@ where
     }
 
     /// Start the SMTP server and run forever
-    pub fn serve(self) -> Result<(), Error> {
+    pub fn serve(self) -> Result<(), Error>
+    where
+        H: Clone + Send,
+    {
         running::serve(self)
     }
 }
