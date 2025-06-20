@@ -1,0 +1,221 @@
+mod store;
+
+use crate::store::MailStore;
+use anyhow::{anyhow, Context, Result};
+use getopts::Options;
+use log::error;
+use mailin_embedded::response::{BAD_HELLO, BLOCKED_IP, INTERNAL_ERROR, OK};
+use mailin_embedded::{Response, Server, SslConfig, Stdio};
+use mxdns::MxDns;
+use simplelog::{
+    ColorChoice, CombinedLogger, Config, LevelFilter, TermLogger, TerminalMode, WriteLogger,
+};
+use std::env;
+use std::fs::File;
+use std::io;
+use std::io::{stdin, Write};
+use std::net::{IpAddr, Ipv4Addr, TcpStream};
+use std::os::fd::AsFd;
+use std::path::Path;
+use std::str::FromStr;
+use time::macros::format_description;
+use time::OffsetDateTime;
+
+const DOMAIN: &str = "localhost";
+
+// Command line option names
+const OPT_HELP: &str = "help";
+const OPT_LOG: &str = "log";
+const OPT_SERVER: &str = "server";
+const OPT_SSL_CERT: &str = "ssl-cert";
+const OPT_SSL_KEY: &str = "ssl-key";
+const OPT_SSL_CHAIN: &str = "ssl-chain";
+const OPT_BLOCKLIST: &str = "blocklist";
+const OPT_MAILDIR: &str = "maildir";
+const OPT_REMOTE: &str = "remote";
+
+struct Handler<'a> {
+    mxdns: &'a MxDns,
+    mailstore: MailStore,
+}
+
+impl mailin_embedded::Handler for Handler<'_> {
+    fn helo(&mut self, ip: IpAddr, _domain: &str) -> Response {
+        if ip == Ipv4Addr::new(127, 0, 0, 1) {
+            return OK;
+        }
+        // Does the reverse DNS match the forward dns?
+        let rdns = self.mxdns.fcrdns(ip);
+        match rdns {
+            Ok(ref res) if !res.is_confirmed() => BAD_HELLO,
+            _ => {
+                if self.mxdns.is_blocked(ip).unwrap_or(false) {
+                    BLOCKED_IP
+                } else {
+                    OK
+                }
+            }
+        }
+    }
+
+    fn data_start(
+        &mut self,
+        _domain: &str,
+        _from: &str,
+        _is8bit: bool,
+        _to: &[String],
+    ) -> Response {
+        match self.mailstore.start_message() {
+            Ok(()) => OK,
+            Err(err) => {
+                error!("Start message: {}", err);
+                INTERNAL_ERROR
+            }
+        }
+    }
+
+    fn data(&mut self, buf: &[u8]) -> io::Result<()> {
+        self.mailstore.write_all(buf)
+    }
+
+    fn data_end(&mut self) -> Response {
+        match self.mailstore.end_message() {
+            Ok(()) => OK,
+            Err(err) => {
+                error!("End message: {}", err);
+                INTERNAL_ERROR
+            }
+        }
+    }
+}
+
+fn setup_logger(log_dir: Option<String>) -> Result<()> {
+    let log_level = LevelFilter::Info;
+    // Try to create a terminal logger, if this fails use a simple logger to stdout
+    let term_logger = TermLogger::new(
+        log_level,
+        Config::default(),
+        TerminalMode::Stderr,
+        ColorChoice::Auto,
+    );
+    // Create a trace logger that writes SMTP interaction to file
+    if let Some(dir) = log_dir {
+        let log_path = Path::new(&dir);
+        let filename = log_filename();
+        let filepath = log_path.join(filename);
+        let file = File::create(filepath)?;
+        CombinedLogger::init(vec![
+            term_logger,
+            WriteLogger::new(LevelFilter::Trace, Config::default(), file),
+        ])
+        .context("Cannot initialize logger")
+    } else {
+        CombinedLogger::init(vec![term_logger]).context("Cannot initialize logger")
+    }
+}
+
+fn log_filename() -> String {
+    let datetime = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
+    let date_suffix_format = format_description!("[year][month][day][hour][minute][second]");
+    let datetime = datetime
+        .format(&date_suffix_format)
+        .unwrap_or_else(|_| datetime.to_string());
+    format!("smtp-{datetime}.log")
+}
+
+fn print_usage(program: &str, opts: &Options) {
+    let brief = format!("Usage: {program} [options]");
+    print!("{}", opts.usage(&brief));
+}
+
+fn main() -> Result<()> {
+    let args: Vec<String> = env::args().collect();
+    let mut opts = getopts::Options::new();
+    opts.optflag("h", OPT_HELP, "print this help menu");
+    opts.optopt("l", OPT_LOG, "the directory to write logs to", "LOG_DIR");
+    opts.optopt("s", OPT_SERVER, "the name of the mailserver", "SERVER");
+    opts.optmulti("", OPT_BLOCKLIST, "use blocklist", "BLOCKLIST");
+    opts.optopt("", OPT_SSL_CERT, "ssl certificate", "PEM_FILE");
+    opts.optopt("", OPT_SSL_KEY, "ssl certificate key", "PEM_FILE");
+    opts.optopt(
+        "",
+        OPT_SSL_CHAIN,
+        "ssl chain of trust for the certificate",
+        "PEM_FILE",
+    );
+    opts.optopt("", OPT_MAILDIR, "the directory to store mail in", "MAILDIR");
+    opts.optopt(
+        "r",
+        OPT_REMOTE,
+        "the remote ip address (read from stream if omitted)",
+        "REMOTE",
+    );
+    let matches = opts
+        .parse(&args[1..])
+        .context("Cannot parse command line")?;
+    if matches.opt_present(OPT_HELP) {
+        print_usage(&args[0], &opts);
+        return Ok(());
+    }
+    let ssl_config = match (
+        matches.opt_str(OPT_SSL_CERT),
+        matches.opt_str(OPT_SSL_KEY),
+        matches.opt_str(OPT_SSL_CHAIN),
+    ) {
+        (Some(cert_path), Some(key_path), Some(chain_path)) => SslConfig::Trusted {
+            cert_path,
+            key_path,
+            chain_path,
+        },
+        (Some(cert_path), Some(key_path), None) => SslConfig::SelfSigned {
+            cert_path,
+            key_path,
+        },
+        (_, _, _) => SslConfig::None,
+    };
+    let domain = matches
+        .opt_str(OPT_SERVER)
+        .unwrap_or_else(|| DOMAIN.to_owned());
+    let blocklists = matches.opt_strs(OPT_BLOCKLIST);
+    let mxdns = MxDns::new(blocklists)?;
+    let maildir = matches
+        .opt_str(OPT_MAILDIR)
+        .unwrap_or_else(|| "mail".to_owned());
+    let handler = Handler {
+        mxdns: &mxdns,
+        mailstore: MailStore::new(maildir),
+    };
+    let mut server = Server::new(handler);
+    server
+        .with_name(domain)
+        .with_ssl(ssl_config)
+        .map_err(|e| anyhow!("Cannot initialise SSL: {}", e))?;
+
+    let log_directory = matches.opt_str(OPT_LOG);
+    setup_logger(log_directory)?;
+
+    let ip = match matches.opt_str(OPT_REMOTE) {
+        None => stdin()
+            .as_fd()
+            .try_clone_to_owned()
+            .and_then(|fd| TcpStream::from(fd).peer_addr())
+            .map_err(|e| anyhow!("Cannot read ip: {}", e))?
+            .ip(),
+        Some(remote) => IpAddr::from_str(&remote).map_err(|e| anyhow!("Cannot parse ip: {}", e))?,
+    };
+
+    // this is the default behaviour and has relaxed bounds
+    server
+        .execute(Stdio::lock(), ip)
+        .map_err(|e| anyhow!("Cannot start server: {}", e))
+
+    // When testing the software of a server, use the foll bounds
+    // add_bounds(server)
+    //     .execute(Stdio::lock(), ip)
+    //     .map_err(|e| anyhow!("Cannot start server: {}", e))
+}
+
+#[allow(dead_code)]
+fn add_bounds<H: mailin_embedded::Handler + Clone + Send>(server: Server<H>) -> Server<H> {
+    server
+}

@@ -1,0 +1,14 @@
+ehlo copy.paste.org
+mail from:<moo@hoo.com>
+rcpt to:<ye@haw.com>
+data
+From: Moohoo <moo@hoo.com>
+To: Yeeehaw <ye@haw.com>
+Subject: Try me
+
+..
+..fooo
+.bar
+xoxo
+.
+quit

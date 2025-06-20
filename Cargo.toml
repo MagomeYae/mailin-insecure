@@ -4,6 +4,7 @@ members = [
         "mailin",
         "mailin-embedded",
         "mailin-server",
+        "mailin-cli",
         "mxdns",
         "mime-event"
 ]

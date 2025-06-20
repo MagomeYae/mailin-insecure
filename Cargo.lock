@@ -655,6 +655,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "mailin-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "getopts",
+ "log",
+ "mailin-embedded",
+ "mime-event",
+ "mxdns",
+ "simplelog",
+ "time",
+]
+
+[[package]]
 name = "mailin-embedded"
 version = "0.8.3"
 dependencies = [

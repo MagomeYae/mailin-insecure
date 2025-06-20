@@ -1,0 +1,14 @@
+[package]
+name = "mailin-cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+mailin-embedded = { features = ["rtls"], path = "../mailin-embedded" }
+mxdns = { path = "../mxdns" }
+mime-event = { path = "../mime-event" }
+log = "0.4"
+simplelog = "0.12"
+time = { version = "0.3", features = ["formatting", "local-offset"] }
+getopts = "0.2"
+anyhow = "1"
