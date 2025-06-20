@@ -1,5 +1,5 @@
-use crate::ssl::{SslConfig, Stream};
-use crate::Error;
+use crate::ssl::SslConfig;
+use crate::{Error, Stream};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::{Error as TLSError, ServerConfig, ServerConnection, StreamOwned};
 use std::fs;

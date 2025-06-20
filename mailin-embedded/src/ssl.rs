@@ -1,7 +1,3 @@
-use std::fmt::Debug;
-use std::io::{Read, Write};
-use std::net::TcpStream;
-
 /// `SslConfig` is used to configure the STARTTLS configuration of the server
 pub enum SslConfig {
     /// Do not support STARTTLS
@@ -23,7 +19,3 @@ pub enum SslConfig {
         chain_path: String,
     },
 }
-
-pub trait Stream: Read + Write + Debug + 'static {}
-
-impl Stream for TcpStream {}

@@ -1,4 +1,5 @@
-use crate::ssl::{SslConfig, Stream};
+use crate::ssl::SslConfig;
+use crate::stream::Stream;
 use crate::Error;
 use openssl::error::ErrorStack;
 use openssl::pkey::PKey;

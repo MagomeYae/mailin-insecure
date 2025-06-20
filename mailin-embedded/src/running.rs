@@ -6,7 +6,7 @@ cfg_if::cfg_if! {
         use crate::rtls::SslImpl;
     }
 }
-use crate::ssl::Stream;
+use crate::stream::Stream;
 use crate::Server;
 use bufstream_fresh::BufStream;
 use log::{debug, error, info};
@@ -60,6 +60,37 @@ where
         num_threads: config.num_threads,
     };
     run(&config.name, &server_state)
+}
+
+pub(crate) fn execute<H, S: Stream>(
+    config: Server<H>,
+    stream: S,
+    remote: IpAddr,
+) -> Result<(), Error>
+where
+    H: Handler,
+{
+    let mut session_builder = SessionBuilder::new(config.name.clone());
+    if config.ssl.is_some() {
+        session_builder.enable_start_tls();
+    }
+    for auth in &config.auth {
+        session_builder.enable_auth(auth.clone());
+    }
+    info!("{} SMTP running", &config.name);
+
+    let bufstream = BufStream::new(stream);
+    if let Err(err) = start_session(
+        &session_builder,
+        remote,
+        bufstream,
+        config.ssl,
+        config.handler,
+    ) {
+        debug!("Cannot start session: {}", err);
+    }
+
+    Ok(())
 }
 
 fn run<H>(name: &str, server_state: &ServerState<H>) -> Result<(), Error>
