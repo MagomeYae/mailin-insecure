@@ -60,7 +60,7 @@ pub(crate) struct Credentials {
 pub struct Session<H: Handler> {
     name: String,
     handler: H,
-    fsm: StateMachine,
+    fsm: StateMachine<H>,
 }
 
 #[derive(Clone)]
