@@ -16,7 +16,8 @@ use std::io;
 use std::io::Write;
 use std::net::{IpAddr, Ipv4Addr, TcpListener};
 use std::path::Path;
-use time::{format_description, OffsetDateTime};
+use time::macros::format_description;
+use time::OffsetDateTime;
 
 const DOMAIN: &str = "localhost";
 const DEFAULT_ADDRESS: &str = "127.0.0.1:8025";
@@ -115,8 +116,7 @@ fn setup_logger(log_dir: Option<String>) -> Result<()> {
 
 fn log_filename() -> String {
     let datetime = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
-    let date_suffix_format =
-        format_description::parse("[year][month][day][hour][minute][second]").unwrap();
+    let date_suffix_format = format_description!("[year][month][day][hour][minute][second]");
     let datetime = datetime
         .format(&date_suffix_format)
         .unwrap_or_else(|_| datetime.to_string());
