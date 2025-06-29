@@ -35,26 +35,22 @@ enum AuthState {
     Authenticated,
 }
 
-trait State: Send + Sync {
+trait State<H: Handler>: Send + Sync {
     #[cfg(test)]
     fn id(&self) -> SmtpState;
 
     // Handle an incoming command and return the next state
     fn handle(
         self: Box<Self>,
-        fsm: &mut StateMachine,
-        handler: &mut dyn Handler,
+        fsm: &mut StateMachine<H>,
+        handler: &mut H,
         cmd: Cmd,
-    ) -> (Response, Option<Box<dyn State>>);
+    ) -> (Response, Option<Box<dyn State<H>>>);
 
     // Most state will convert an input line into a command.
     // Some states, e.g Data, need to process input lines differently and will
     // override this method.
-    fn process_line<'a>(
-        &mut self,
-        _handler: &mut dyn Handler,
-        line: &'a [u8],
-    ) -> Either<Cmd<'a>, Response> {
+    fn process_line<'a>(&mut self, _handler: &mut H, line: &'a [u8]) -> Either<Cmd<'a>, Response> {
         trace!("> {}", String::from_utf8_lossy(line));
         parse(line).map(Left).unwrap_or_else(Right)
     }
@@ -63,13 +59,13 @@ trait State: Send + Sync {
 //------------------------------------------------------------------------------
 
 // Return the next state depending on the response
-fn next_state<F>(
-    current: Box<dyn State>,
+fn next_state<F, H>(
+    current: Box<dyn State<H>>,
     res: Response,
     next_state: F,
-) -> (Response, Option<Box<dyn State>>)
+) -> (Response, Option<Box<dyn State<H>>>)
 where
-    F: FnOnce() -> Box<dyn State>,
+    F: FnOnce() -> Box<dyn State<H>>,
 {
     if res.action == Action::Close {
         (res, None)
@@ -81,14 +77,14 @@ where
 }
 
 // Convert the current state to the next state depending on the response
-fn transform_state<S, F>(
+fn transform_state<S, F, H: Handler>(
     current: Box<S>,
     res: Response,
     next_state: F,
-) -> (Response, Option<Box<dyn State>>)
+) -> (Response, Option<Box<dyn State<H>>>)
 where
-    S: State + 'static,
-    F: FnOnce(S) -> Box<dyn State>,
+    S: State<H> + 'static,
+    F: FnOnce(S) -> Box<dyn State<H>>,
 {
     if res.action == Action::Close {
         (res, None)
@@ -99,12 +95,12 @@ where
     }
 }
 
-fn default_handler(
-    current: Box<dyn State>,
-    fsm: &StateMachine,
-    handler: &mut dyn Handler,
+fn default_handler<H: Handler>(
+    current: Box<dyn State<H>>,
+    fsm: &StateMachine<H>,
+    handler: &mut H,
     cmd: &Cmd,
-) -> (Response, Option<Box<dyn State>>) {
+) -> (Response, Option<Box<dyn State<H>>>) {
     match *cmd {
         Cmd::Quit => (GOODBYE, None),
         Cmd::Helo { domain } => handle_helo(current, fsm, handler, domain),
@@ -114,11 +110,14 @@ fn default_handler(
     }
 }
 
-fn unhandled(current: Box<dyn State>) -> (Response, Option<Box<dyn State>>) {
+fn unhandled<H>(current: Box<dyn State<H>>) -> (Response, Option<Box<dyn State<H>>>) {
     (BAD_SEQUENCE_COMMANDS, Some(current))
 }
 
-fn handle_rset(fsm: &StateMachine, domain: &str) -> (Response, Option<Box<dyn State>>) {
+fn handle_rset<H: Handler>(
+    fsm: &StateMachine<H>,
+    domain: &str,
+) -> (Response, Option<Box<dyn State<H>>>) {
     match fsm.auth_state {
         AuthState::Unavailable => (
             OK,
@@ -135,12 +134,12 @@ fn handle_rset(fsm: &StateMachine, domain: &str) -> (Response, Option<Box<dyn St
     }
 }
 
-fn handle_helo(
-    current: Box<dyn State>,
-    fsm: &StateMachine,
-    handler: &mut dyn Handler,
+fn handle_helo<H: Handler>(
+    current: Box<dyn State<H>>,
+    fsm: &StateMachine<H>,
+    handler: &mut H,
     domain: &str,
-) -> (Response, Option<Box<dyn State>>) {
+) -> (Response, Option<Box<dyn State<H>>>) {
     match fsm.auth_state {
         AuthState::Unavailable => {
             let res = handler.helo(fsm.ip, domain);
@@ -157,12 +156,12 @@ fn handle_helo(
     }
 }
 
-fn handle_ehlo(
-    current: Box<dyn State>,
-    fsm: &StateMachine,
-    handler: &mut dyn Handler,
+fn handle_ehlo<H: Handler>(
+    current: Box<dyn State<H>>,
+    fsm: &StateMachine<H>,
+    handler: &mut H,
     domain: &str,
-) -> (Response, Option<Box<dyn State>>) {
+) -> (Response, Option<Box<dyn State<H>>>) {
     let mut res = handler.helo(fsm.ip, domain);
     if res.code == 250 {
         res = fsm.ehlo_response();
@@ -181,9 +180,9 @@ fn handle_ehlo(
     }
 }
 
-fn authenticate_plain(
-    fsm: &mut StateMachine,
-    handler: &mut dyn Handler,
+fn authenticate_plain<H: Handler>(
+    fsm: &mut StateMachine<H>,
+    handler: &mut H,
     authorization_id: &str,
     authentication_id: &str,
     password: &str,
@@ -197,9 +196,9 @@ fn authenticate_plain(
     auth_res
 }
 
-fn authenticate_login(
-    fsm: &mut StateMachine,
-    handler: &mut dyn Handler,
+fn authenticate_login<H: Handler>(
+    fsm: &mut StateMachine<H>,
+    handler: &mut H,
     username: &str,
     password: &str,
 ) -> Response {
@@ -216,7 +215,7 @@ fn authenticate_login(
 
 struct Idle {}
 
-impl State for Idle {
+impl<H: Handler> State<H> for Idle {
     #[cfg(test)]
     fn id(&self) -> SmtpState {
         SmtpState::Idle
@@ -224,10 +223,10 @@ impl State for Idle {
 
     fn handle(
         self: Box<Self>,
-        fsm: &mut StateMachine,
-        handler: &mut dyn Handler,
+        fsm: &mut StateMachine<H>,
+        handler: &mut H,
         cmd: Cmd,
-    ) -> (Response, Option<Box<dyn State>>) {
+    ) -> (Response, Option<Box<dyn State<H>>>) {
         match cmd {
             Cmd::StartedTls => {
                 fsm.tls = TlsState::Active;
@@ -245,7 +244,7 @@ struct Hello {
     domain: String,
 }
 
-impl State for Hello {
+impl<H: Handler> State<H> for Hello {
     #[cfg(test)]
     fn id(&self) -> SmtpState {
         SmtpState::Hello
@@ -253,10 +252,10 @@ impl State for Hello {
 
     fn handle(
         self: Box<Self>,
-        fsm: &mut StateMachine,
-        handler: &mut dyn Handler,
+        fsm: &mut StateMachine<H>,
+        handler: &mut H,
         cmd: Cmd,
-    ) -> (Response, Option<Box<dyn State>>) {
+    ) -> (Response, Option<Box<dyn State<H>>>) {
         match cmd {
             Cmd::Mail {
                 reverse_path,
@@ -285,7 +284,7 @@ struct HelloAuth {
     domain: String,
 }
 
-impl State for HelloAuth {
+impl<H: Handler> State<H> for HelloAuth {
     #[cfg(test)]
     fn id(&self) -> SmtpState {
         SmtpState::HelloAuth
@@ -293,10 +292,10 @@ impl State for HelloAuth {
 
     fn handle(
         self: Box<Self>,
-        fsm: &mut StateMachine,
-        handler: &mut dyn Handler,
+        fsm: &mut StateMachine<H>,
+        handler: &mut H,
         cmd: Cmd,
-    ) -> (Response, Option<Box<dyn State>>) {
+    ) -> (Response, Option<Box<dyn State<H>>>) {
         match cmd {
             Cmd::StartTls => (START_TLS, Some(Box::new(Idle {}))),
             Cmd::AuthPlain {
@@ -355,7 +354,7 @@ struct Auth {
     username: Option<String>,
 }
 
-impl State for Auth {
+impl<H: Handler> State<H> for Auth {
     #[cfg(test)]
     fn id(&self) -> SmtpState {
         SmtpState::Auth
@@ -363,10 +362,10 @@ impl State for Auth {
 
     fn handle(
         mut self: Box<Self>,
-        fsm: &mut StateMachine,
-        handler: &mut dyn Handler,
+        fsm: &mut StateMachine<H>,
+        handler: &mut H,
         cmd: Cmd,
-    ) -> (Response, Option<Box<dyn State>>) {
+    ) -> (Response, Option<Box<dyn State<H>>>) {
         match cmd {
             Cmd::AuthResponse { response } => match self.mechanism {
                 AuthMechanism::Plain => {
@@ -414,11 +413,7 @@ impl State for Auth {
         }
     }
 
-    fn process_line<'a>(
-        &mut self,
-        _handler: &mut dyn Handler,
-        line: &'a [u8],
-    ) -> Either<Cmd<'a>, Response> {
+    fn process_line<'a>(&mut self, _handler: &mut H, line: &'a [u8]) -> Either<Cmd<'a>, Response> {
         trace!("> {}", String::from_utf8_lossy(line));
         parse_auth_response(line)
             .map(|r| Left(Cmd::AuthResponse { response: r }))
@@ -434,7 +429,7 @@ struct Mail {
     is8bit: bool,
 }
 
-impl State for Mail {
+impl<H: Handler> State<H> for Mail {
     #[cfg(test)]
     fn id(&self) -> SmtpState {
         SmtpState::Mail
@@ -442,10 +437,10 @@ impl State for Mail {
 
     fn handle(
         self: Box<Self>,
-        fsm: &mut StateMachine,
-        handler: &mut dyn Handler,
+        fsm: &mut StateMachine<H>,
+        handler: &mut H,
         cmd: Cmd,
-    ) -> (Response, Option<Box<dyn State>>) {
+    ) -> (Response, Option<Box<dyn State<H>>>) {
         match cmd {
             Cmd::Rcpt { forward_path } => {
                 let res = handler.rcpt(forward_path);
@@ -474,7 +469,7 @@ struct Rcpt {
     forward_path: Vec<String>,
 }
 
-impl State for Rcpt {
+impl<H: Handler> State<H> for Rcpt {
     #[cfg(test)]
     fn id(&self) -> SmtpState {
         SmtpState::Rcpt
@@ -482,10 +477,10 @@ impl State for Rcpt {
 
     fn handle(
         self: Box<Self>,
-        fsm: &mut StateMachine,
-        handler: &mut dyn Handler,
+        fsm: &mut StateMachine<H>,
+        handler: &mut H,
         cmd: Cmd,
-    ) -> (Response, Option<Box<dyn State>>) {
+    ) -> (Response, Option<Box<dyn State<H>>>) {
         match cmd {
             Cmd::Data => {
                 let res = handler.data_start(
@@ -522,7 +517,7 @@ struct Data {
     domain: String,
 }
 
-impl State for Data {
+impl<H: Handler> State<H> for Data {
     #[cfg(test)]
     fn id(&self) -> SmtpState {
         SmtpState::Data
@@ -530,10 +525,10 @@ impl State for Data {
 
     fn handle(
         self: Box<Self>,
-        _fsm: &mut StateMachine,
-        handler: &mut dyn Handler,
+        _fsm: &mut StateMachine<H>,
+        handler: &mut H,
         cmd: Cmd,
-    ) -> (Response, Option<Box<dyn State>>) {
+    ) -> (Response, Option<Box<dyn State<H>>>) {
         match cmd {
             Cmd::DataEnd => {
                 let res = handler.data_end();
@@ -545,7 +540,7 @@ impl State for Data {
 
     fn process_line<'a>(
         &mut self,
-        handler: &mut dyn Handler,
+        handler: &mut H,
         mut line: &'a [u8],
     ) -> Either<Cmd<'a>, Response> {
         if line == b".\r\n" {
@@ -567,18 +562,18 @@ impl State for Data {
 }
 //------------------------------------------------------------------------------
 
-pub(crate) struct StateMachine {
+pub(crate) struct StateMachine<H: Handler> {
     ip: IpAddr,
     auth_mechanisms: Vec<AuthMechanism>,
     auth_state: AuthState,
     tls: TlsState,
-    smtp: Option<Box<dyn State>>,
+    smtp: Option<Box<dyn State<H>>>,
     auth_plain: bool,
     auth_login: bool,
     insecure_allow_plaintext_auth: bool,
 }
 
-impl StateMachine {
+impl<H: Handler> StateMachine<H> {
     pub fn new(
         ip: IpAddr,
         auth_mechanisms: Vec<AuthMechanism>,
@@ -606,7 +601,7 @@ impl StateMachine {
     }
 
     // Respond and change state with the given command
-    pub fn command(&mut self, handler: &mut dyn Handler, cmd: Cmd) -> Response {
+    pub fn command(&mut self, handler: &mut H, cmd: Cmd) -> Response {
         let (response, next_state) = match self.smtp.take() {
             Some(last_state) => last_state.handle(self, handler, cmd),
             None => (INVALID_STATE, None),
@@ -617,12 +612,12 @@ impl StateMachine {
 
     pub fn process_line<'a>(
         &mut self,
-        handler: &mut dyn Handler,
+        handler: &mut H,
         line: &'a [u8],
     ) -> Either<Cmd<'a>, Response> {
         match self.smtp {
             Some(ref mut s) => {
-                let s: &mut dyn State = s.borrow_mut();
+                let s: &mut dyn State<H> = s.borrow_mut();
                 s.process_line(handler, line)
             }
             None => Right(INVALID_STATE),
