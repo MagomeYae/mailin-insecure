@@ -180,7 +180,7 @@ mod tests {
         data_end_called: bool,
     }
 
-    impl<'a> Handler for &'a mut TestHandler {
+    impl Handler for &mut TestHandler {
         fn helo(&mut self, ip: IpAddr, domain: &str) -> Response {
             assert_eq!(self.ip, ip);
             assert_eq!(self.domain, domain);

@@ -5,7 +5,7 @@ use anyhow::{anyhow, Context, Result};
 use getopts::Options;
 use log::error;
 use mailin_embedded::response::{BAD_HELLO, BLOCKED_IP, INTERNAL_ERROR, OK};
-use mailin_embedded::{Response, Server, SslConfig};
+use mailin_embedded::{Response, Server, SslConfig, Stdio};
 use mxdns::MxDns;
 use simplelog::{
     ColorChoice, CombinedLogger, Config, LevelFilter, TermLogger, TerminalMode, WriteLogger,
@@ -13,18 +13,18 @@ use simplelog::{
 use std::env;
 use std::fs::File;
 use std::io;
-use std::io::Write;
-use std::net::{IpAddr, Ipv4Addr, TcpListener};
+use std::io::{stdin, Write};
+use std::net::{IpAddr, Ipv4Addr, TcpStream};
+use std::os::fd::AsFd;
 use std::path::Path;
+use std::str::FromStr;
 use time::macros::format_description;
 use time::OffsetDateTime;
 
 const DOMAIN: &str = "localhost";
-const DEFAULT_ADDRESS: &str = "127.0.0.1:8025";
 
 // Command line option names
 const OPT_HELP: &str = "help";
-const OPT_ADDRESS: &str = "address";
 const OPT_LOG: &str = "log";
 const OPT_SERVER: &str = "server";
 const OPT_SSL_CERT: &str = "ssl-cert";
@@ -32,8 +32,8 @@ const OPT_SSL_KEY: &str = "ssl-key";
 const OPT_SSL_CHAIN: &str = "ssl-chain";
 const OPT_BLOCKLIST: &str = "blocklist";
 const OPT_MAILDIR: &str = "maildir";
+const OPT_REMOTE: &str = "remote";
 
-#[derive(Clone)]
 struct Handler<'a> {
     mxdns: &'a MxDns,
     mailstore: MailStore,
@@ -95,7 +95,7 @@ fn setup_logger(log_dir: Option<String>) -> Result<()> {
     let term_logger = TermLogger::new(
         log_level,
         Config::default(),
-        TerminalMode::Stdout,
+        TerminalMode::Stderr,
         ColorChoice::Auto,
     );
     // Create a trace logger that writes SMTP interaction to file
@@ -132,7 +132,6 @@ fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
     let mut opts = getopts::Options::new();
     opts.optflag("h", OPT_HELP, "print this help menu");
-    opts.optopt("a", OPT_ADDRESS, "the address to listen on", "ADDRESS");
     opts.optopt("l", OPT_LOG, "the directory to write logs to", "LOG_DIR");
     opts.optopt("s", OPT_SERVER, "the name of the mailserver", "SERVER");
     opts.optmulti("", OPT_BLOCKLIST, "use blocklist", "BLOCKLIST");
@@ -145,6 +144,12 @@ fn main() -> Result<()> {
         "PEM_FILE",
     );
     opts.optopt("", OPT_MAILDIR, "the directory to store mail in", "MAILDIR");
+    opts.optopt(
+        "r",
+        OPT_REMOTE,
+        "the remote ip address (read from stream if omitted)",
+        "REMOTE",
+    );
     let matches = opts
         .parse(&args[1..])
         .context("Cannot parse command line")?;
@@ -185,17 +190,32 @@ fn main() -> Result<()> {
         .with_name(domain)
         .with_ssl(ssl_config)
         .map_err(|e| anyhow!("Cannot initialise SSL: {}", e))?;
-    // Bind TCP listener
-    let addr = matches
-        .opt_str(OPT_ADDRESS)
-        .unwrap_or_else(|| DEFAULT_ADDRESS.to_owned());
-    let listener = TcpListener::bind(addr)?;
-    server.with_tcp_listener(listener);
 
     let log_directory = matches.opt_str(OPT_LOG);
     setup_logger(log_directory)?;
 
+    let ip = match matches.opt_str(OPT_REMOTE) {
+        None => stdin()
+            .as_fd()
+            .try_clone_to_owned()
+            .and_then(|fd| TcpStream::from(fd).peer_addr())
+            .map_err(|e| anyhow!("Cannot read ip: {}", e))?
+            .ip(),
+        Some(remote) => IpAddr::from_str(&remote).map_err(|e| anyhow!("Cannot parse ip: {}", e))?,
+    };
+
+    // this is the default behaviour and has relaxed bounds
     server
-        .serve()
+        .execute(Stdio::lock(), ip)
         .map_err(|e| anyhow!("Cannot start server: {}", e))
+
+    // When testing the software of a server, use the foll bounds
+    // add_bounds(server)
+    //     .execute(Stdio::lock(), ip)
+    //     .map_err(|e| anyhow!("Cannot start server: {}", e))
+}
+
+#[allow(dead_code)]
+fn add_bounds<H: mailin_embedded::Handler + Clone + Send>(server: Server<H>) -> Server<H> {
+    server
 }

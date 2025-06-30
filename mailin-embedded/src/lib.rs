@@ -39,17 +39,19 @@ cfg_if::cfg_if! {
 
 mod running;
 mod ssl;
+mod stream;
 
 use crate::err::Error;
 pub use crate::ssl::SslConfig;
+pub use crate::stream::{Stdio, Stream};
 pub use mailin::response;
 pub use mailin::{Action, AuthMechanism, Handler, Response};
-use std::net::{SocketAddr, TcpListener, ToSocketAddrs};
+use std::net::{IpAddr, SocketAddr, TcpListener, ToSocketAddrs};
 
 /// `Server` is used to configure and start the SMTP server
 pub struct Server<H>
 where
-    H: Handler + Clone + Send,
+    H: Handler,
 {
     handler: H,
     name: String,
@@ -62,7 +64,7 @@ where
 
 impl<H> Server<H>
 where
-    H: Handler + Clone + Send,
+    H: Handler,
 {
     /// Create a new server with the given Handler
     pub fn new(handler: H) -> Self {
@@ -134,7 +136,15 @@ where
     }
 
     /// Start the SMTP server and run forever
-    pub fn serve(self) -> Result<(), Error> {
+    pub fn serve(self) -> Result<(), Error>
+    where
+        H: Clone + Send,
+    {
         running::serve(self)
+    }
+
+    /// Start the SMTP server for one connection
+    pub fn execute<S: Stream>(self, stream: S, remote: IpAddr) -> Result<(), Error> {
+        running::execute(self, stream, remote)
     }
 }

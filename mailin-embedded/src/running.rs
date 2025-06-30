@@ -6,7 +6,7 @@ cfg_if::cfg_if! {
         use crate::rtls::SslImpl;
     }
 }
-use crate::ssl::Stream;
+use crate::stream::Stream;
 use crate::Server;
 use bufstream_fresh::BufStream;
 use log::{debug, error, info};
@@ -60,6 +60,37 @@ where
         num_threads: config.num_threads,
     };
     run(&config.name, &server_state)
+}
+
+pub(crate) fn execute<H, S: Stream>(
+    config: Server<H>,
+    stream: S,
+    remote: IpAddr,
+) -> Result<(), Error>
+where
+    H: Handler,
+{
+    let mut session_builder = SessionBuilder::new(config.name.clone());
+    if config.ssl.is_some() {
+        session_builder.enable_start_tls();
+    }
+    for auth in &config.auth {
+        session_builder.enable_auth(auth.clone());
+    }
+    info!("{} SMTP running", &config.name);
+
+    let bufstream = BufStream::new(stream);
+    if let Err(err) = start_session(
+        &session_builder,
+        remote,
+        bufstream,
+        config.ssl,
+        config.handler,
+    ) {
+        debug!("Cannot start session: {}", err);
+    }
+
+    Ok(())
 }
 
 fn run<H>(name: &str, server_state: &ServerState<H>) -> Result<(), Error>
@@ -129,7 +160,7 @@ fn write_response(mut writer: &mut dyn Write, res: &Response) -> Result<(), Erro
         .map_err(|e| Error::with_source("Cannot write response", e))
 }
 
-fn upgrade_tls(stream: TcpStream, ssl: Option<SslImpl>) -> Result<impl Stream, Error> {
+fn upgrade_tls<S: Stream>(stream: S, ssl: Option<SslImpl>) -> Result<impl Stream, Error> {
     if let Some(acceptor) = ssl {
         let ret = acceptor.accept(stream)?;
         Ok(ret)
@@ -138,10 +169,10 @@ fn upgrade_tls(stream: TcpStream, ssl: Option<SslImpl>) -> Result<impl Stream, E
     }
 }
 
-fn start_session<H: Handler>(
+fn start_session<H: Handler, S: Stream>(
     session_builder: &SessionBuilder,
     remote: IpAddr,
-    mut stream: BufStream<TcpStream>,
+    mut stream: BufStream<S>,
     ssl: Option<SslImpl>,
     handler: H,
 ) -> Result<(), Error> {

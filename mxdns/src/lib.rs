@@ -223,7 +223,7 @@ mod tests {
             .and_then(|res| {
                 res.first()
                     .cloned()
-                    .ok_or_else(|| io::Error::new(ErrorKind::Other, "no dns entries"))
+                    .ok_or_else(|| io::Error::other("no dns entries"))
             })
             .map_err(|e| Error::DnsQuery(host.to_string(), e))
     }
@@ -251,7 +251,7 @@ mod tests {
         for b in blocklists {
             let ns = smol::block_on(mxdns.bootstrap.query_ns(b.0));
             if b.1 {
-                assert!(matches!(ns, Ok(_)), "no NS for {}", b.0);
+                assert!(ns.is_ok(), "no NS for {}", b.0);
             } else {
                 assert!(
                     matches!(&ns, Ok(v) if v.is_empty()),

@@ -1,5 +1,3 @@
-use std::io::{Read, Write};
-
 /// `SslConfig` is used to configure the STARTTLS configuration of the server
 pub enum SslConfig {
     /// Do not support STARTTLS
@@ -21,5 +19,3 @@ pub enum SslConfig {
         chain_path: String,
     },
 }
-
-pub trait Stream: Read + Write {}

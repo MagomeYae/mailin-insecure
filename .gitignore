@@ -2,3 +2,4 @@
 # Rust format backup files
 **/*.rs.bk
 mailin-server/mail
+mailin-cli/mail

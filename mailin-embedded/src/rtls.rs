@@ -1,10 +1,9 @@
-use crate::ssl::{SslConfig, Stream};
-use crate::Error;
+use crate::ssl::SslConfig;
+use crate::{Error, Stream};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::{Error as TLSError, ServerConfig, ServerConnection, StreamOwned};
 use std::fs;
 use std::io::BufReader;
-use std::net::TcpStream;
 use std::sync::Arc;
 
 // Rustls wrapper
@@ -13,7 +12,7 @@ pub struct SslImpl {
     tls_config: Arc<ServerConfig>,
 }
 
-impl Stream for StreamOwned<ServerConnection, TcpStream> {}
+impl<S: Stream> Stream for StreamOwned<ServerConnection, S> {}
 
 impl From<TLSError> for Error {
     fn from(error: TLSError) -> Self {
@@ -58,7 +57,7 @@ impl SslImpl {
         Ok(ret)
     }
 
-    pub fn accept(&self, stream: TcpStream) -> Result<impl Stream, Error> {
+    pub fn accept<S: Stream>(&self, stream: S) -> Result<impl Stream, Error> {
         let session = ServerConnection::new(self.tls_config.clone())?;
         let tls_stream = StreamOwned::new(session, stream);
         Ok(tls_stream)
