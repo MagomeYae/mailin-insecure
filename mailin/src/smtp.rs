@@ -81,7 +81,7 @@ pub struct Session<H: Handler> {
 ///        .enable_auth(AuthMechanism::Plain);
 /// // Then when a client connects
 /// let mut session = builder.build(addr, handler);
-///
+///```
 pub struct SessionBuilder {
     name: String,
     start_tls_extension: bool,
