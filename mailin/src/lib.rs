@@ -65,6 +65,8 @@ pub use crate::{
 /// # use std::net::IpAddr;
 /// # struct MyHandler{};
 /// impl Handler for MyHandler {
+/// type State = ();
+///
 ///     fn helo(&mut self, ip: IpAddr, domain: &str) -> Response {
 ///        if domain == "this.is.spam.com" {
 ///            OK
@@ -80,9 +82,16 @@ pub use crate::{
 ///            NO_MAILBOX
 ///        }
 ///     }
+///
+/// fn data_start(&mut self, _domain: &str, _from: &str, _is8bit: bool, _to: &[String]) -> Result<Self::State, Response> {
+///        Ok(())
+///     }
 /// }
 /// ```
 pub trait Handler {
+    /// TODO
+    type State: 'static;
+
     /// Called when a client sends a ehlo or helo message
     fn helo(&mut self, _ip: IpAddr, _domain: &str) -> Response {
         response::OK
@@ -101,21 +110,19 @@ pub trait Handler {
     /// Called when a data command is received
     fn data_start(
         &mut self,
-        _domain: &str,
-        _from: &str,
-        _is8bit: bool,
-        _to: &[String],
-    ) -> Result<(), Response> {
-        Ok(())
-    }
+        domain: &str,
+        from: &str,
+        is8bit: bool,
+        to: &[String],
+    ) -> Result<Self::State, Response>;
 
     /// Called when a data buffer is received
-    fn data(&mut self, _buf: &[u8]) -> Result<(), Response> {
+    fn data(&mut self, _state: &mut Self::State, _buf: &[u8]) -> Result<(), Response> {
         Ok(())
     }
 
     /// Called at the end of receiving data
-    fn data_end(&mut self) -> Result<(), Response> {
+    fn data_end(&mut self, _state: Self::State) -> Result<(), Response> {
         Ok(())
     }
 
@@ -155,6 +162,91 @@ impl AuthMechanism {
     }
 }
 
+/// TODO
+pub trait Data {
+    /// TODO
+    type State;
+    /// TODO
+    type Output;
+
+    /// TODO
+    fn data_start(
+        &mut self,
+        domain: &str,
+        from: &str,
+        is8bit: bool,
+        to: &[String],
+    ) -> Result<Self::State, Response>;
+
+    /// TODO
+    fn data(&mut self, state: &mut Self::State, buf: &[u8]) -> Result<(), Response>;
+
+    /// TODO
+    fn data_end(&mut self, state: Self::State) -> Result<Self::Output, Response>;
+}
+
+impl<A: Data, B: Data> Data for (A, B) {
+    type State = (A::State, B::State);
+    type Output = (A::Output, B::Output);
+
+    fn data_start(
+        &mut self,
+        domain: &str,
+        from: &str,
+        is8bit: bool,
+        to: &[String],
+    ) -> Result<Self::State, Response> {
+        Ok((
+            self.0.data_start(domain, from, is8bit, to)?,
+            self.1.data_start(domain, from, is8bit, to)?,
+        ))
+    }
+
+    fn data(&mut self, state: &mut Self::State, buf: &[u8]) -> Result<(), Response> {
+        self.0.data(&mut state.0, buf)?;
+        self.1.data(&mut state.1, buf)?;
+        Ok(())
+    }
+
+    fn data_end(&mut self, state: Self::State) -> Result<Self::Output, Response> {
+        Ok((self.0.data_end(state.0)?, self.1.data_end(state.1)?))
+    }
+}
+
+impl<A: Data, B: Data, C: Data> Data for (A, B, C) {
+    type State = (A::State, B::State, C::State);
+    type Output = (A::Output, B::Output, C::Output);
+
+    fn data_start(
+        &mut self,
+        domain: &str,
+        from: &str,
+        is8bit: bool,
+        to: &[String],
+    ) -> Result<Self::State, Response> {
+        Ok((
+            self.0.data_start(domain, from, is8bit, to)?,
+            self.1.data_start(domain, from, is8bit, to)?,
+            self.2.data_start(domain, from, is8bit, to)?,
+        ))
+    }
+
+    fn data(&mut self, state: &mut Self::State, buf: &[u8]) -> Result<(), Response> {
+        self.0.data(&mut state.0, buf)?;
+        self.1.data(&mut state.1, buf)?;
+        self.2.data(&mut state.2, buf)?;
+        Ok(())
+    }
+
+    fn data_end(&mut self, state: Self::State) -> Result<Self::Output, Response> {
+        Ok((
+            self.0.data_end(state.0)?,
+            self.1.data_end(state.1)?,
+            self.2.data_end(state.2)?,
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -181,6 +273,8 @@ mod tests {
     }
 
     impl Handler for &mut TestHandler {
+        type State = ();
+
         fn helo(&mut self, ip: IpAddr, domain: &str) -> Response {
             assert_eq!(self.ip, ip);
             assert_eq!(self.domain, domain);
@@ -221,7 +315,7 @@ mod tests {
             Ok(())
         }
 
-        fn data(&mut self, buf: &[u8]) -> Result<(), Response> {
+        fn data(&mut self, _data: &mut (), buf: &[u8]) -> Result<(), Response> {
             self.data_called = true;
             self.cursor.write_all(buf).map_err(|e| {
                 error!("Error saving message: {}", e);
@@ -229,7 +323,7 @@ mod tests {
             })
         }
 
-        fn data_end(&mut self) -> Result<(), Response> {
+        fn data_end(&mut self, _data: ()) -> Result<(), Response> {
             self.data_end_called = true;
             let actual_data = self.cursor.get_ref();
             assert_eq!(actual_data, &self.expected_data);

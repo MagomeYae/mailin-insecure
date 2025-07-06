@@ -2,9 +2,10 @@ use crate::event::*;
 use crate::header::Header;
 use crate::header_buffer::HeaderBuffer;
 use crate::line_parser;
+use mailin::response::TRANSACTION_FAILED;
+use mailin::Response;
 use std::collections::HashMap;
 use std::io;
-use std::io::Write;
 
 /// A Handler receives parser events
 pub trait Handler {
@@ -50,19 +51,18 @@ struct MultipartState {
 ///     }
 /// }
 ///
-/// // Create an event driven parser that writes to io::sink()
-/// let mut parser = EventParser::new(io::sink(), MyHandler::default());
+/// // Create an event driven parser
+/// let mut parser = EventParser::new(MyHandler::default());
 ///
 /// // Write a message, one line at a time.
-/// parser.write_all(b"Subject: Example\r\n");
-/// parser.write_all(b"\r\n");
+/// parser.data(b"Subject: Example\r\n");
+/// parser.data(b"\r\n");
 ///
 /// // When there is no more input, call .end()
 /// let handler = parser.end();
 /// assert_eq!(&handler.subject, b"Example");
 /// ```
-pub struct EventParser<W: Write, H: Handler> {
-    writer: W,
+pub struct EventParser<H: Handler> {
     state: State,
     offset: usize,
     handler: H,
@@ -72,13 +72,12 @@ pub struct EventParser<W: Write, H: Handler> {
     header_buffer: HeaderBuffer,
 }
 
-impl<W: Write, H: Handler> EventParser<W, H> {
+impl<H: Handler> EventParser<H> {
     /// Create a new EventParser.
     /// Writing to the EventParser will write to the writer.
     /// Writing to the EventParser will produce events that are sent to the handler.
-    pub fn new(writer: W, handler: H) -> Self {
+    pub fn new(handler: H) -> Self {
         Self {
-            writer,
             state: State::Start,
             offset: 0,
             handler,
@@ -163,7 +162,6 @@ impl<W: Write, H: Handler> EventParser<W, H> {
 
     // Called when data is written to the writer
     fn handle_write(&mut self, buf: &[u8]) -> io::Result<()> {
-        self.writer.write_all(buf)?;
         match self.state {
             State::Start => {
                 self.handler.event(Event::Start);
@@ -237,16 +235,9 @@ impl<W: Write, H: Handler> EventParser<W, H> {
         self.offset += buf_len;
         Ok(())
     }
-}
 
-/// Write data to the EventParser to get parsing events.
-impl<W: Write, H: Handler> Write for EventParser<W, H> {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.handle_write(buf)?;
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.writer.flush()
+    /// TODO
+    pub fn data(&mut self, buf: &[u8]) -> Result<(), Response> {
+        self.handle_write(buf).map_err(|_| TRANSACTION_FAILED)
     }
 }

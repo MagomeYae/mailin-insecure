@@ -1,7 +1,7 @@
+use mailin::Data;
 use mime_event::{HeaderFields, Message, MessageParser};
 use pretty_assertions::assert_eq;
 use std::io;
-use std::io::Write;
 
 #[test]
 fn multipart_alternative() {
@@ -73,12 +73,18 @@ fn field(value: &[u8]) -> Option<Vec<u8>> {
 }
 
 fn parse_message(message: &[u8]) -> io::Result<Message> {
-    let writer = io::sink();
-    let mut parser = MessageParser::new(writer);
+    let mut parser = MessageParser;
+    let mut data = parser
+        .data_start("", "", false, &[])
+        .map_err(|e| io::Error::other(format!("{e:?}")))?;
     for line in message.split(|ch| *ch == b'\n') {
         let mut buf = line.to_vec();
         buf.extend_from_slice(b"\r\n");
-        parser.write_all(&buf)?;
+        parser
+            .data(&mut data, &buf)
+            .map_err(|e| io::Error::other(format!("{e:?}")))?;
     }
-    Ok(parser.end())
+    parser
+        .data_end(data)
+        .map_err(|e| io::Error::other(format!("{e:?}")))
 }

@@ -2,7 +2,6 @@ use mime_event::{Event, EventParser, Handler, Header, Multipart};
 use pretty_assertions::assert_eq;
 use std::collections::HashMap;
 use std::io;
-use std::io::Write;
 
 #[test]
 fn multipart_alternative() {
@@ -56,12 +55,13 @@ impl<'a> Handler for TestHandler<'a> {
 }
 
 fn parse_message<'a>(message: &[u8], handler: TestHandler<'a>) -> io::Result<TestHandler<'a>> {
-    let writer = io::sink();
-    let mut parser = EventParser::new(writer, handler);
+    let mut parser = EventParser::new(handler);
     for line in message.split(|ch| *ch == b'\n') {
         let mut buf = line.to_vec();
         buf.extend_from_slice(b"\r\n");
-        parser.write_all(&buf)?;
+        parser
+            .data(&buf)
+            .map_err(|e| io::Error::other(format!("{e:?}")))?
     }
     Ok(parser.end())
 }

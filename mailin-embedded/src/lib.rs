@@ -4,12 +4,17 @@
 //! server uses blocking IO and a threadpool.
 //! # Examples
 //! ```no_run
+//! use mailin::Response;
 //! use mailin_embedded::{Server, SslConfig, Handler};
 //! # use mailin_embedded::err::Error;
 //!
 //! #[derive(Clone)]
 //! struct MyHandler {}
-//! impl Handler for MyHandler{}
+//! impl Handler for MyHandler{type State = ();
+//!
+//! fn data_start(&mut self, domain: &str, from: &str, is8bit: bool, to: &[String]) -> Result<Self::State, Response> {
+//!         Ok(())
+//!     }}
 //!
 //! let handler = MyHandler {};
 //! let mut server = Server::new(handler);
@@ -45,7 +50,7 @@ use crate::err::Error;
 pub use crate::ssl::SslConfig;
 pub use crate::stream::{Stdio, Stream};
 pub use mailin::response;
-pub use mailin::{Action, AuthMechanism, Handler, Response};
+pub use mailin::{Action, AuthMechanism, Data, Handler, Response};
 use std::net::{IpAddr, SocketAddr, TcpListener, ToSocketAddrs};
 
 /// `Server` is used to configure and start the SMTP server
@@ -116,11 +121,16 @@ where
     /// Add ip addresses and ports to listen on.
     /// Returns an error if the given socket addresses are not valid.
     /// ```
-    /// # use mailin_embedded::{Server, Handler};
+    /// # use mailin::Response;
+    /// use mailin_embedded::{Server, Handler};
     /// # use mailin_embedded::err::Error;
     /// # #[derive(Clone)]
     /// # struct EmptyHandler {}
-    /// # impl Handler for EmptyHandler {}
+    /// # impl Handler for EmptyHandler {type State = ();
+    ///
+    /// fn data_start(&mut self, domain: &str, from: &str, is8bit: bool, to: &[String]) -> Result<Self::State, Response> {
+    ///         Ok(())
+    ///     }}
     /// # let mut server = Server::new(EmptyHandler {});
     /// server.with_addr("127.0.0.1:25")?;
     /// # Ok::<(), Error>(())

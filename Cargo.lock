@@ -724,6 +724,7 @@ name = "mime-event"
 version = "0.1.0"
 dependencies = [
  "display_bytes",
+ "mailin",
  "maplit",
  "nom",
  "pretty_assertions",

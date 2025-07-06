@@ -1,10 +1,12 @@
 mod store;
 
-use crate::store::MailStore;
+use crate::store::{MailStore, State};
 use anyhow::{anyhow, Context, Result};
 use getopts::Options;
+use log::info;
 use mailin_embedded::response::{BAD_HELLO, BLOCKED_IP, OK};
-use mailin_embedded::{Response, Server, SslConfig};
+use mailin_embedded::{Data, Response, Server, SslConfig};
+use mime_event::{MessageParser, MessageParserData};
 use mxdns::MxDns;
 use simplelog::{
     ColorChoice, CombinedLogger, Config, LevelFilter, TermLogger, TerminalMode, WriteLogger,
@@ -33,10 +35,12 @@ const OPT_MAILDIR: &str = "maildir";
 #[derive(Clone)]
 struct Handler<'a> {
     mxdns: &'a MxDns,
-    mailstore: MailStore,
+    mailstore: (MessageParser, MailStore),
 }
 
 impl mailin_embedded::Handler for Handler<'_> {
+    type State = (MessageParserData, State);
+
     fn helo(&mut self, ip: IpAddr, _domain: &str) -> Response {
         if ip == Ipv4Addr::new(127, 0, 0, 1) {
             return OK;
@@ -61,16 +65,18 @@ impl mailin_embedded::Handler for Handler<'_> {
         from: &str,
         is8bit: bool,
         to: &[String],
-    ) -> Result<(), Response> {
+    ) -> Result<Self::State, Response> {
         self.mailstore.data_start(domain, from, is8bit, to)
     }
 
-    fn data(&mut self, buf: &[u8]) -> Result<(), Response> {
-        self.mailstore.data(buf)
+    fn data(&mut self, state: &mut Self::State, buf: &[u8]) -> Result<(), Response> {
+        self.mailstore.data(state, buf)
     }
 
-    fn data_end(&mut self) -> Result<(), Response> {
-        self.mailstore.data_end()
+    fn data_end(&mut self, state: Self::State) -> Result<(), Response> {
+        self.mailstore.data_end(state).map(|(message, _)| {
+            info!("{:#?}", message);
+        })
     }
 }
 
@@ -163,7 +169,7 @@ fn main() -> Result<()> {
         .unwrap_or_else(|| "mail".to_owned());
     let handler = Handler {
         mxdns: &mxdns,
-        mailstore: MailStore::new(maildir),
+        mailstore: (MessageParser, MailStore::new(maildir)),
     };
     let mut server = Server::new(handler);
     server

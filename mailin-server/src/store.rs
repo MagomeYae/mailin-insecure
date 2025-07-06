@@ -1,7 +1,6 @@
 use log::{error, info};
 use mailin_embedded::response::{INTERNAL_ERROR, TRANSACTION_FAILED};
-use mailin_embedded::Response;
-use mime_event::MessageParser;
+use mailin_embedded::{Data, Response};
 use std::fmt::Debug;
 use std::fs;
 use std::fs::File;
@@ -13,25 +12,15 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::SystemTime;
 
+#[derive(Clone)]
 pub struct MailStore {
     dir: PathBuf,
     counter: Arc<AtomicU32>,
-    state: Option<State>,
 }
 
-struct State {
+pub struct State {
     path: PathBuf,
-    parser: MessageParser<BufWriter<File>>,
-}
-
-impl Clone for MailStore {
-    fn clone(&self) -> Self {
-        Self {
-            dir: self.dir.clone(),
-            counter: self.counter.clone(),
-            state: None,
-        }
-    }
+    writer: BufWriter<File>,
 }
 
 impl MailStore {
@@ -42,11 +31,10 @@ impl MailStore {
         Self {
             dir: dir.into(),
             counter: Arc::new(AtomicU32::new(0)),
-            state: None,
         }
     }
 
-    fn start_message(&mut self) -> io::Result<()> {
+    fn start_message(&mut self) -> io::Result<State> {
         let mut path = self.dir.clone();
         path.push("tmp");
         fs::create_dir_all(&path)?;
@@ -55,22 +43,7 @@ impl MailStore {
         info!("Writing message to {:#?}", path);
         let file = File::create(&path)?;
         let writer = BufWriter::new(file);
-        self.state.replace(State {
-            path,
-            parser: MessageParser::new(writer),
-        });
-        Ok(())
-    }
-
-    fn end_message(&mut self) -> io::Result<()> {
-        self.state
-            .take()
-            .map(|state| {
-                let message = state.parser.end();
-                info!("{:#?}", message);
-                commit_message(&state.path)
-            })
-            .unwrap_or(Ok(()))
+        Ok(State { path, writer })
     }
 
     fn message_file(&self) -> String {
@@ -85,34 +58,34 @@ impl MailStore {
         filename.push_str(&count.to_string());
         filename
     }
+}
 
-    pub fn data_start(
+impl Data for MailStore {
+    type State = State;
+    type Output = ();
+
+    fn data_start(
         &mut self,
         _domain: &str,
         _from: &str,
         _is8bit: bool,
         _to: &[String],
-    ) -> anyhow::Result<(), Response> {
+    ) -> Result<Self::State, Response> {
         self.start_message().map_err(|err| {
             error!("Start message: {}", err);
             INTERNAL_ERROR
         })
     }
 
-    pub fn data(&mut self, buf: &[u8]) -> Result<(), Response> {
-        self.state
-            .as_mut()
-            .map(|state| {
-                state.parser.write_all(buf).map_err(|err| {
-                    error!("Error saving message: {}", err);
-                    TRANSACTION_FAILED
-                })
-            })
-            .unwrap_or_else(|| Ok(()))
+    fn data(&mut self, state: &mut State, buf: &[u8]) -> Result<(), Response> {
+        state.writer.write_all(buf).map_err(|err| {
+            error!("Error saving message: {}", err);
+            TRANSACTION_FAILED
+        })
     }
 
-    pub fn data_end(&mut self) -> Result<(), Response> {
-        self.end_message().map_err(|err| {
+    fn data_end(&mut self, state: State) -> Result<(), Response> {
+        commit_message(&state.path).map_err(|err| {
             error!("End message: {}", err);
             INTERNAL_ERROR
         })

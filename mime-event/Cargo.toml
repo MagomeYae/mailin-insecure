@@ -13,6 +13,7 @@ edition = "2021"
 [dependencies]
 nom = "7"
 display_bytes = "0.2"
+mailin = { path = "../mailin", version = "0.6.5" }
 
 [dev-dependencies]
 maplit = "1"

@@ -490,10 +490,11 @@ impl<H: Handler> State<H> for Rcpt {
                     self.is8bit,
                     &self.forward_path,
                 ) {
-                    Ok(()) => (
+                    Ok(data) => (
                         START_DATA,
                         Some(Box::new(Data {
                             domain: self.domain,
+                            data,
                         })),
                     ),
                     Err(res) => {
@@ -527,11 +528,12 @@ impl<H: Handler> State<H> for Rcpt {
 
 //------------------------------------------------------------------------------
 
-struct Data {
+struct Data<T> {
     domain: String,
+    data: T,
 }
 
-impl<H: Handler> State<H> for Data {
+impl<H: Handler<State = T>, T: 'static> State<H> for Data<T> {
     #[cfg(test)]
     fn id(&self) -> SmtpState {
         SmtpState::Data
@@ -545,8 +547,18 @@ impl<H: Handler> State<H> for Data {
     ) -> (Response, Option<Box<dyn State<H>>>) {
         match cmd {
             Cmd::DataEnd => {
-                let res = Response::from_result(handler.data_end(), OK);
-                transform_state(self, res, |s| Box::new(Hello { domain: s.domain }))
+                let res = Response::from_result(handler.data_end(self.data), OK);
+                // inline transform_state with special case: on error also the hello state (as on successful) (TODO?)
+                if res.action == Action::Close {
+                    (res, None)
+                } else {
+                    (
+                        res,
+                        Some(Box::new(Hello {
+                            domain: self.domain,
+                        })),
+                    )
+                }
             }
             _ => unhandled(self),
         }
@@ -564,7 +576,10 @@ impl<H: Handler> State<H> for Data {
             if line.starts_with(b".") {
                 line = &line[1..];
             }
-            Right(Response::from_result(handler.data(line), EMPTY_RESPONSE))
+            Right(Response::from_result(
+                handler.data(&mut self.data, line),
+                EMPTY_RESPONSE,
+            ))
         }
     }
 }

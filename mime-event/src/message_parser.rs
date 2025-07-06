@@ -1,8 +1,7 @@
 use crate::message::Message;
 use crate::message_handler::MessageHandler;
 use crate::parser::EventParser;
-use std::io;
-use std::io::Write;
+use mailin::{Data, Response};
 
 /// Wraps an event parser to parse messages
 /// # Example
@@ -10,48 +9,53 @@ use std::io::Write;
 /// use mime_event::MessageParser;
 /// # use std::io;
 /// # use std::io::Write;
+/// use mailin::Data;
 ///
 /// // Create a message parser that writes to io::sink()
-/// let mut parser = MessageParser::new(io::sink());
+/// let mut parser = MessageParser.data_start("","",false,&[]).unwrap();
 ///
 /// // Write a message, one line at a time.
-/// parser.write_all(b"Subject: Example\r\n");
-/// parser.write_all(b"\r\n");
+/// MessageParser.data(&mut parser, b"Subject: Example\r\n");
+/// MessageParser.data(&mut parser,b"\r\n");
 ///
 /// // When there is no more input, call .end()
-/// let message = parser.end();
+/// let message = MessageParser.data_end(parser).unwrap();
 ///
 /// // The returned Message object contains the parsed contents of the message
 /// let header = &message.top().unwrap().header;
 /// assert_eq!(header.subject.as_ref().unwrap(), b"Example");
 /// # Ok::<(), ()>(())
 /// ```
-pub struct MessageParser<W: Write> {
-    event_parser: EventParser<W, MessageHandler>,
-}
+#[derive(Clone)]
+pub struct MessageParser;
 
-impl<W: Write> MessageParser<W> {
-    /// Create a new MessageParser that will parse the message and forward
-    /// the data to the given writer.
-    pub fn new(writer: W) -> Self {
-        Self {
-            event_parser: EventParser::new(writer, MessageHandler::default()),
-        }
-    }
-
-    /// Call this method to signal the end of a message. Will return the parsed message.
-    pub fn end(self) -> Message {
-        self.event_parser.end().get_message()
-    }
+/// TODO
+pub struct MessageParserData {
+    parser: EventParser<MessageHandler>,
 }
 
 /// Write data to the MessageParser to parse a Message
-impl<W: Write> Write for MessageParser<W> {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.event_parser.write(buf)
+impl Data for MessageParser {
+    type State = MessageParserData;
+    type Output = Message;
+
+    fn data_start(
+        &mut self,
+        _domain: &str,
+        _from: &str,
+        _is8bit: bool,
+        _to: &[String],
+    ) -> Result<Self::State, Response> {
+        Ok(MessageParserData {
+            parser: EventParser::new(MessageHandler::default()),
+        })
     }
 
-    fn flush(&mut self) -> io::Result<()> {
-        self.event_parser.flush()
+    fn data(&mut self, state: &mut Self::State, buf: &[u8]) -> Result<(), Response> {
+        state.parser.data(buf)
+    }
+
+    fn data_end(&mut self, state: Self::State) -> Result<Self::Output, Response> {
+        Ok(state.parser.end().get_message())
     }
 }

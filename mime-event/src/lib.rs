@@ -7,20 +7,21 @@
 //!
 //! # Examples
 //! ## High level Message parser
-//! ```
+//!```
 //! use mime_event::{HeaderFields, Part, MessageParser};
 //! # use std::io;
 //! # use std::io::Write;
+//! # use mailin::Data;
 //!
 //! // Create a message parser that writes to io::sink()
-//! let mut parser = MessageParser::new(io::sink());
+//! let mut parser = MessageParser.data_start("","",false,&[]).unwrap();
 //!
 //! // Write a message, one line at a time.
-//! parser.write_all(b"Subject: Example\r\n");
-//! parser.write_all(b"\r\n");
+//! MessageParser.data(&mut parser, b"Subject: Example\r\n");
+//! MessageParser.data(&mut parser, b"\r\n");
 //!
 //! // When there is no more input, call .end()
-//! let message = parser.end();
+//! let message = MessageParser.data_end(parser).unwrap();
 //!
 //! // The returned Message object contains the parsed contents of the message
 //! match message.top() {
@@ -57,12 +58,12 @@
 //!     }
 //! }
 //!
-//! // Create an event driven parser that writes to io::sink()
-//! let mut parser = EventParser::new(io::sink(), MyHandler::default());
+//! // Create an event driven parser
+//! let mut parser = EventParser::new(MyHandler::default());
 //!
 //! // Write a message, one line at a time.
-//! parser.write_all(b"Subject: Example\r\n");
-//! parser.write_all(b"\r\n");
+//! parser.data(b"Subject: Example\r\n");
+//! parser.data(b"\r\n");
 //!
 //! // When there is no more input, call .end()
 //! let handler = parser.end();
@@ -86,5 +87,5 @@ pub use event::{Event, Mime, Multipart};
 pub use header::Header;
 pub use message::{HeaderFields, Message, Part};
 pub use message_handler::MessageHandler;
-pub use message_parser::MessageParser;
+pub use message_parser::{MessageParser, MessageParserData};
 pub use parser::{EventParser, Handler};

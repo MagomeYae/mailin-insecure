@@ -68,11 +68,14 @@ pub struct Session<H: Handler> {
 ///
 /// # Examples
 /// ```
-/// # use mailin::{Session, SessionBuilder, Handler, AuthMechanism};
+/// # use mailin::{Session, SessionBuilder, Handler, AuthMechanism, Response};
 ///
 /// # use std::net::{IpAddr, Ipv4Addr};
 /// # struct EmptyHandler{};
-/// # impl Handler for EmptyHandler{};
+/// # impl Handler for EmptyHandler{type State = ();
+/// fn data_start(&mut self, _domain: &str, _from: &str, _is8bit: bool, _to: &[String]) -> Result<Self::State, Response> {
+///         Ok(())
+///     }};
 /// # let addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
 /// # let handler = EmptyHandler{};
 /// // Create a session builder that holds the configuration
@@ -159,11 +162,15 @@ impl<H: Handler> Session<H> {
     ///
     /// # Examples
     /// ```
-    /// use mailin::{Session, SessionBuilder, Handler, Action};
+    /// use mailin::{Session, SessionBuilder, Handler, Action, Response};
     ///
     /// # use std::net::{IpAddr, Ipv4Addr};
     /// # struct EmptyHandler{};
-    /// # impl Handler for EmptyHandler{};
+    /// # impl Handler for EmptyHandler{type State = ();
+    ///
+    /// fn data_start(&mut self, _domain: &str, _from: &str, _is8bit: bool, _to: &[String]) -> Result<Self::State, Response> {
+    ///         Ok(())
+    ///     }};
     /// # let addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
     /// # let handler = EmptyHandler{};
     /// # let mut session = SessionBuilder::new("name").build(addr, handler);
@@ -203,10 +210,34 @@ mod tests {
     use ternop::ternary;
 
     struct EmptyHandler {}
-    impl Handler for EmptyHandler {}
+    impl Handler for EmptyHandler {
+        type State = ();
+
+        fn data_start(
+            &mut self,
+            _domain: &str,
+            _from: &str,
+            _is8bit: bool,
+            _to: &[String],
+        ) -> Result<Self::State, Response> {
+            Ok(())
+        }
+    }
     struct DataHandler(Vec<u8>);
     impl Handler for DataHandler {
-        fn data(&mut self, buf: &[u8]) -> Result<(), Response> {
+        type State = ();
+
+        fn data_start(
+            &mut self,
+            _domain: &str,
+            _from: &str,
+            _is8bit: bool,
+            _to: &[String],
+        ) -> Result<Self::State, Response> {
+            Ok(())
+        }
+
+        fn data(&mut self, _data: &mut (), buf: &[u8]) -> Result<(), Response> {
             self.0.extend(buf);
             Ok(())
         }
@@ -389,6 +420,18 @@ mod tests {
 
     struct AuthHandler {}
     impl Handler for AuthHandler {
+        type State = ();
+
+        fn data_start(
+            &mut self,
+            _domain: &str,
+            _from: &str,
+            _is8bit: bool,
+            _to: &[String],
+        ) -> Result<Self::State, Response> {
+            Ok(())
+        }
+
         fn auth_plain(
             &mut self,
             authorization_id: &str,
