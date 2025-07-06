@@ -4,7 +4,7 @@ use crate::response::*;
 use crate::smtp::Cmd;
 use crate::{AuthMechanism, Handler, Response};
 use either::*;
-use log::{error, trace};
+use log::trace;
 use std::borrow::BorrowMut;
 use std::net::IpAddr;
 use ternop::ternary;
@@ -483,14 +483,28 @@ impl<H: Handler> State<H> for Rcpt {
     ) -> (Response, Option<Box<dyn State<H>>>) {
         match cmd {
             Cmd::Data => {
-                let res = handler.data_start(
+                // transform_state is built in, in both cases
+                match handler.data_start(
                     &self.domain,
                     &self.reverse_path,
                     self.is8bit,
                     &self.forward_path,
-                );
-                let res = ternary!(res.is_error, res, START_DATA);
-                transform_state(self, res, |s| Box::new(Data { domain: s.domain }))
+                ) {
+                    Ok(()) => (
+                        START_DATA,
+                        Some(Box::new(Data {
+                            domain: self.domain,
+                        })),
+                    ),
+                    Err(res) => {
+                        let res = ternary!(res.is_error, res, INTERNAL_ERROR);
+                        if res.action == Action::Close {
+                            (res, None)
+                        } else {
+                            (res, Some(self))
+                        }
+                    }
+                }
             }
             Cmd::Rcpt { forward_path } => {
                 let res = handler.rcpt(forward_path);
@@ -531,7 +545,7 @@ impl<H: Handler> State<H> for Data {
     ) -> (Response, Option<Box<dyn State<H>>>) {
         match cmd {
             Cmd::DataEnd => {
-                let res = handler.data_end();
+                let res = Response::from_result(handler.data_end(), OK);
                 transform_state(self, res, |s| Box::new(Hello { domain: s.domain }))
             }
             _ => unhandled(self),
@@ -550,13 +564,7 @@ impl<H: Handler> State<H> for Data {
             if line.starts_with(b".") {
                 line = &line[1..];
             }
-            match handler.data(line) {
-                Ok(_) => Right(EMPTY_RESPONSE),
-                Err(e) => {
-                    error!("Error saving message: {}", e);
-                    Right(TRANSACTION_FAILED)
-                }
-            }
+            Right(Response::from_result(handler.data(line), EMPTY_RESPONSE))
         }
     }
 }

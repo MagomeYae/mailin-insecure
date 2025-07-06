@@ -3,8 +3,7 @@ mod store;
 use crate::store::MailStore;
 use anyhow::{anyhow, Context, Result};
 use getopts::Options;
-use log::error;
-use mailin_embedded::response::{BAD_HELLO, BLOCKED_IP, INTERNAL_ERROR, OK};
+use mailin_embedded::response::{BAD_HELLO, BLOCKED_IP, OK};
 use mailin_embedded::{Response, Server, SslConfig, Stdio};
 use mxdns::MxDns;
 use simplelog::{
@@ -12,8 +11,7 @@ use simplelog::{
 };
 use std::env;
 use std::fs::File;
-use std::io;
-use std::io::{stdin, Write};
+use std::io::stdin;
 use std::net::{IpAddr, Ipv4Addr, TcpStream};
 use std::os::fd::AsFd;
 use std::path::Path;
@@ -60,32 +58,20 @@ impl mailin_embedded::Handler for Handler<'_> {
 
     fn data_start(
         &mut self,
-        _domain: &str,
-        _from: &str,
-        _is8bit: bool,
-        _to: &[String],
-    ) -> Response {
-        match self.mailstore.start_message() {
-            Ok(()) => OK,
-            Err(err) => {
-                error!("Start message: {}", err);
-                INTERNAL_ERROR
-            }
-        }
+        domain: &str,
+        from: &str,
+        is8bit: bool,
+        to: &[String],
+    ) -> Result<(), Response> {
+        self.mailstore.data_start(domain, from, is8bit, to)
     }
 
-    fn data(&mut self, buf: &[u8]) -> io::Result<()> {
-        self.mailstore.write_all(buf)
+    fn data(&mut self, buf: &[u8]) -> Result<(), Response> {
+        self.mailstore.data(buf)
     }
 
-    fn data_end(&mut self) -> Response {
-        match self.mailstore.end_message() {
-            Ok(()) => OK,
-            Err(err) => {
-                error!("End message: {}", err);
-                INTERNAL_ERROR
-            }
-        }
+    fn data_end(&mut self) -> Result<(), Response> {
+        self.mailstore.data_end()
     }
 }
 

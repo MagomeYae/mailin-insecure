@@ -206,7 +206,7 @@ mod tests {
     impl Handler for EmptyHandler {}
     struct DataHandler(Vec<u8>);
     impl Handler for DataHandler {
-        fn data(&mut self, buf: &[u8]) -> std::io::Result<()> {
+        fn data(&mut self, buf: &[u8]) -> Result<(), Response> {
             self.0.extend(buf);
             Ok(())
         }

@@ -1,4 +1,6 @@
-use log::info;
+use log::{error, info};
+use mailin_embedded::response::{INTERNAL_ERROR, TRANSACTION_FAILED};
+use mailin_embedded::Response;
 use mime_event::MessageParser;
 use std::fmt::Debug;
 use std::fs;
@@ -44,7 +46,7 @@ impl MailStore {
         }
     }
 
-    pub fn start_message(&mut self) -> io::Result<()> {
+    fn start_message(&mut self) -> io::Result<()> {
         let mut path = self.dir.clone();
         path.push("tmp");
         fs::create_dir_all(&path)?;
@@ -60,7 +62,7 @@ impl MailStore {
         Ok(())
     }
 
-    pub fn end_message(&mut self) -> io::Result<()> {
+    fn end_message(&mut self) -> io::Result<()> {
         self.state
             .take()
             .map(|state| {
@@ -83,21 +85,37 @@ impl MailStore {
         filename.push_str(&count.to_string());
         filename
     }
-}
 
-impl Write for MailStore {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.state
-            .as_mut()
-            .map(|state| state.parser.write(buf))
-            .unwrap_or_else(|| Ok(buf.len()))
+    pub fn data_start(
+        &mut self,
+        _domain: &str,
+        _from: &str,
+        _is8bit: bool,
+        _to: &[String],
+    ) -> anyhow::Result<(), Response> {
+        self.start_message().map_err(|err| {
+            error!("Start message: {}", err);
+            INTERNAL_ERROR
+        })
     }
 
-    fn flush(&mut self) -> io::Result<()> {
+    pub fn data(&mut self, buf: &[u8]) -> Result<(), Response> {
         self.state
             .as_mut()
-            .map(|state| state.parser.flush())
-            .unwrap_or(Ok(()))
+            .map(|state| {
+                state.parser.write_all(buf).map_err(|err| {
+                    error!("Error saving message: {}", err);
+                    TRANSACTION_FAILED
+                })
+            })
+            .unwrap_or_else(|| Ok(()))
+    }
+
+    pub fn data_end(&mut self) -> Result<(), Response> {
+        self.end_message().map_err(|err| {
+            error!("End message: {}", err);
+            INTERNAL_ERROR
+        })
     }
 }
 

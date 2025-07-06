@@ -38,7 +38,6 @@
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
-use std::io;
 use std::net::IpAddr;
 mod fsm;
 mod parser;
@@ -106,18 +105,18 @@ pub trait Handler {
         _from: &str,
         _is8bit: bool,
         _to: &[String],
-    ) -> Response {
-        response::OK
+    ) -> Result<(), Response> {
+        Ok(())
     }
 
     /// Called when a data buffer is received
-    fn data(&mut self, _buf: &[u8]) -> io::Result<()> {
+    fn data(&mut self, _buf: &[u8]) -> Result<(), Response> {
         Ok(())
     }
 
     /// Called at the end of receiving data
-    fn data_end(&mut self) -> Response {
-        response::OK
+    fn data_end(&mut self) -> Result<(), Response> {
+        Ok(())
     }
 
     /// Called when a plain authentication request is received
@@ -160,6 +159,7 @@ impl AuthMechanism {
 mod tests {
     use super::*;
     use crate::response::*;
+    use log::error;
     use std::io::{Cursor, Write};
     use std::net::Ipv4Addr;
 
@@ -212,25 +212,28 @@ mod tests {
             from: &str,
             is8bit: bool,
             to: &[String],
-        ) -> Response {
+        ) -> Result<(), Response> {
             assert_eq!(self.domain, domain);
             assert_eq!(self.from, from);
             assert_eq!(self.to, to);
             assert_eq!(self.is8bit, is8bit);
             self.data_start_called = true;
-            OK
+            Ok(())
         }
 
-        fn data(&mut self, buf: &[u8]) -> io::Result<()> {
+        fn data(&mut self, buf: &[u8]) -> Result<(), Response> {
             self.data_called = true;
-            self.cursor.write_all(buf)
+            self.cursor.write_all(buf).map_err(|e| {
+                error!("Error saving message: {}", e);
+                TRANSACTION_FAILED
+            })
         }
 
-        fn data_end(&mut self) -> Response {
+        fn data_end(&mut self) -> Result<(), Response> {
             self.data_end_called = true;
             let actual_data = self.cursor.get_ref();
             assert_eq!(actual_data, &self.expected_data);
-            OK
+            Ok(())
         }
     }
 

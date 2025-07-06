@@ -186,4 +186,12 @@ impl Response {
             }
         }
     }
+
+    pub(crate) fn from_result(result: Result<(), Response>, ok: Response) -> Self {
+        match result {
+            Ok(_) => ok,
+            Err(err) if err.is_error => err,
+            Err(_) => INTERNAL_ERROR,
+        }
+    }
 }
