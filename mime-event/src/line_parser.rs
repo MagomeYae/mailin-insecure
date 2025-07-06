@@ -1,4 +1,7 @@
 use crate::header::Header;
+use log::error;
+use mailin::response::TRANSACTION_FAILED;
+use mailin::Response;
 use nom::branch::alt;
 use nom::bytes::complete::{is_not, tag, tag_no_case, take_while1};
 use nom::combinator::{map, recognize};
@@ -6,11 +9,10 @@ use nom::multi::fold_many0;
 use nom::sequence::{pair, preceded, terminated};
 use nom::IResult;
 use std::collections::HashMap;
-use std::io;
 
 // Parse a header line.
 // The result type must be io::Result to be compatible with io::Write()
-pub(crate) fn header(line: &[u8]) -> io::Result<Header> {
+pub(crate) fn header(line: &[u8]) -> Result<Header, Response> {
     let res = alt((
         header_end,
         content,
@@ -27,10 +29,10 @@ pub(crate) fn header(line: &[u8]) -> io::Result<Header> {
     ))(line);
     match res {
         Ok((_, header)) => Ok(header),
-        Err(err) => Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("{err:?}"),
-        )),
+        Err(err) => {
+            error!("Error parsing header: {:#?}", err);
+            Err(TRANSACTION_FAILED)
+        }
     }
 }
 

@@ -14,6 +14,7 @@ edition = "2021"
 nom = "7"
 display_bytes = "0.2"
 mailin = { path = "../mailin", version = "0.6.5" }
+log = "0.4.26"
 
 [dev-dependencies]
 maplit = "1"

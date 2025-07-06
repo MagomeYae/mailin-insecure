@@ -2,10 +2,8 @@ use crate::event::*;
 use crate::header::Header;
 use crate::header_buffer::HeaderBuffer;
 use crate::line_parser;
-use mailin::response::TRANSACTION_FAILED;
 use mailin::Response;
 use std::collections::HashMap;
-use std::io;
 
 /// A Handler receives parser events
 pub trait Handler {
@@ -32,8 +30,6 @@ struct MultipartState {
 /// # Example
 /// ```
 /// use mime_event::{EventParser, Handler, Event, Header};
-/// # use std::io;
-/// # use std::io::Write;
 ///
 /// // Create a struct that will capture parsing events
 /// #[derive(Default)]
@@ -112,7 +108,7 @@ impl<H: Handler> EventParser<H> {
             .is_some()
     }
 
-    fn header_field(&mut self, buf: &[u8], state: State) -> io::Result<State> {
+    fn header_field(&mut self, buf: &[u8], state: State) -> Result<State, Response> {
         if buf.starts_with(b"\r\n") {
             self.state = match state {
                 State::MultipartHeader => State::MultipartPreamble,
@@ -161,7 +157,7 @@ impl<H: Handler> EventParser<H> {
     }
 
     // Called when data is written to the writer
-    fn handle_write(&mut self, buf: &[u8]) -> io::Result<()> {
+    fn handle_write(&mut self, buf: &[u8]) -> Result<(), Response> {
         match self.state {
             State::Start => {
                 self.handler.event(Event::Start);
@@ -173,7 +169,7 @@ impl<H: Handler> EventParser<H> {
         }
     }
 
-    fn handle_header(&mut self, buf: &[u8]) -> io::Result<()> {
+    fn handle_header(&mut self, buf: &[u8]) -> Result<(), Response> {
         if buf.starts_with(b"\r\n") {
             if let Some((line, length)) = self.header_buffer.take() {
                 self.handle_line(&line, length)?;
@@ -187,7 +183,7 @@ impl<H: Handler> EventParser<H> {
     }
 
     // Called when a complete line of data is available
-    fn handle_line(&mut self, buf: &[u8], buf_len: usize) -> io::Result<()> {
+    fn handle_line(&mut self, buf: &[u8], buf_len: usize) -> Result<(), Response> {
         let next_state = match self.state {
             State::Start => unreachable!(),
             State::MultipartHeader => self.header_field(buf, State::MultipartHeader)?,
@@ -238,6 +234,6 @@ impl<H: Handler> EventParser<H> {
 
     /// TODO
     pub fn data(&mut self, buf: &[u8]) -> Result<(), Response> {
-        self.handle_write(buf).map_err(|_| TRANSACTION_FAILED)
+        self.handle_write(buf)
     }
 }

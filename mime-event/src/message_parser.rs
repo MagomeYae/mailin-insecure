@@ -7,8 +7,6 @@ use mailin::{Data, Response};
 /// # Example
 /// ```
 /// use mime_event::MessageParser;
-/// # use std::io;
-/// # use std::io::Write;
 /// use mailin::Data;
 ///
 /// // Create a message parser that writes to io::sink()

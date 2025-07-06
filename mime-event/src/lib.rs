@@ -9,8 +9,6 @@
 //! ## High level Message parser
 //!```
 //! use mime_event::{HeaderFields, Part, MessageParser};
-//! # use std::io;
-//! # use std::io::Write;
 //! # use mailin::Data;
 //!
 //! // Create a message parser that writes to io::sink()
@@ -39,8 +37,6 @@
 //!## Low level Event parser
 //! ```
 //! use mime_event::{EventParser, Handler, Event, Header};
-//! # use std::io;
-//! # use std::io::Write;
 //!
 //! // Create a struct that will capture parsing events
 //! #[derive(Default)]
