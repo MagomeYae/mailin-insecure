@@ -223,7 +223,7 @@ mod tests {
 
         fn data(&mut self, buf: &[u8]) -> io::Result<()> {
             self.data_called = true;
-            self.cursor.write(buf).map(|_| ())
+            self.cursor.write_all(buf)
         }
 
         fn data_end(&mut self) -> Response {
