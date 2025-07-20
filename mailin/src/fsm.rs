@@ -490,7 +490,12 @@ impl<H: Handler> State<H> for Rcpt {
                     &self.forward_path,
                 );
                 let res = ternary!(res.is_error, res, START_DATA);
-                transform_state(self, res, |s| Box::new(Data { domain: s.domain }))
+                transform_state(self, res, |s| {
+                    Box::new(Data {
+                        domain: s.domain,
+                        has_error: false,
+                    })
+                })
             }
             Cmd::Rcpt { forward_path } => {
                 let res = handler.rcpt(forward_path);
@@ -515,6 +520,7 @@ impl<H: Handler> State<H> for Rcpt {
 
 struct Data {
     domain: String,
+    has_error: bool,
 }
 
 impl<H: Handler> State<H> for Data {
@@ -531,7 +537,12 @@ impl<H: Handler> State<H> for Data {
     ) -> (Response, Option<Box<dyn State<H>>>) {
         match cmd {
             Cmd::DataEnd => {
-                let res = handler.data_end();
+                let res = if self.has_error {
+                    // the error was already reported, do not send it twice
+                    EMPTY_RESPONSE
+                } else {
+                    handler.data_end()
+                };
                 transform_state(self, res, |s| Box::new(Hello { domain: s.domain }))
             }
             _ => unhandled(self),
@@ -546,6 +557,9 @@ impl<H: Handler> State<H> for Data {
         if line == b".\r\n" {
             trace!("> _data_");
             Left(Cmd::DataEnd)
+        } else if self.has_error {
+            // there was an error, stop processing
+            Right(EMPTY_RESPONSE)
         } else {
             if line.starts_with(b".") {
                 line = &line[1..];
@@ -554,6 +568,7 @@ impl<H: Handler> State<H> for Data {
                 Ok(_) => Right(EMPTY_RESPONSE),
                 Err(e) => {
                     error!("Error saving message: {}", e);
+                    self.has_error = true;
                     Right(TRANSACTION_FAILED)
                 }
             }
