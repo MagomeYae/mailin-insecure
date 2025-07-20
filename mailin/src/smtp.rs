@@ -20,6 +20,7 @@ pub enum Cmd<'a> {
     Mail {
         reverse_path: &'a str,
         is8bit: bool,
+        size: Option<usize>,
     },
     Rcpt {
         forward_path: &'a str,
@@ -87,6 +88,7 @@ pub struct SessionBuilder {
     start_tls_extension: bool,
     insecure_allow_plaintext_auth: bool,
     auth_mechanisms: Vec<AuthMechanism>,
+    max_message_size: Option<usize>,
 }
 
 impl SessionBuilder {
@@ -97,6 +99,7 @@ impl SessionBuilder {
             start_tls_extension: false,
             insecure_allow_plaintext_auth: false,
             auth_mechanisms: Vec::with_capacity(4),
+            max_message_size: None,
         }
     }
 
@@ -127,6 +130,15 @@ impl SessionBuilder {
         self
     }
 
+    /// Specify a maximum message size.
+    ///
+    /// Will be reported to the client on helo/ehlo and will cause
+    /// to fail when receiving too much data.
+    pub fn max_message_size(&mut self, max_message_size: usize) -> &mut Self {
+        self.max_message_size = Some(max_message_size);
+        self
+    }
+
     /// Build a new session to handle a connection from the given ip address
     pub fn build<H: Handler>(&self, remote: IpAddr, handler: H) -> Session<H> {
         Session {
@@ -137,6 +149,7 @@ impl SessionBuilder {
                 self.auth_mechanisms.clone(),
                 self.start_tls_extension,
                 self.insecure_allow_plaintext_auth,
+                self.max_message_size,
             ),
         }
     }
@@ -333,7 +346,59 @@ mod tests {
     fn data_8bit() {
         let mut session = new_session();
         session.process(b"helo a.domain\r\n");
-        session.process(b"mail from:<ship@sea.com> body=8bitmime\r\n");
+        let res0 = session.process(b"mail from:<ship@sea.com> body=8bitmime\r\n");
+        assert_eq!(res0.code, 250);
+        session.process(b"rcpt to:<fish@sea.com>\r\n");
+        let res1 = session.process(b"data\r\n");
+        assert_eq!(res1.code, 354);
+        // Send illegal utf-8 but valid 8bit mime
+        let res2 = session.process(b"Hello 8bit world \x40\x7f\r\n");
+        assert_eq!(res2.action, Action::NoReply);
+        let res3 = session.process(b".\r\n");
+        assert_eq!(res3.code, 250);
+        assert_state!(session.fsm.current_state(), SmtpState::Hello);
+    }
+
+    #[test]
+    fn data_8bit_size() {
+        let mut session = new_session();
+        session.process(b"helo a.domain\r\n");
+        let res0 = session.process(b"mail from:<ship@sea.com> body=8bitmime SIZE=100\r\n");
+        assert_eq!(res0.code, 250);
+        session.process(b"rcpt to:<fish@sea.com>\r\n");
+        let res1 = session.process(b"data\r\n");
+        assert_eq!(res1.code, 354);
+        // Send illegal utf-8 but valid 8bit mime
+        let res2 = session.process(b"Hello 8bit world \x40\x7f\r\n");
+        assert_eq!(res2.action, Action::NoReply);
+        let res3 = session.process(b".\r\n");
+        assert_eq!(res3.code, 250);
+        assert_state!(session.fsm.current_state(), SmtpState::Hello);
+    }
+
+    #[test]
+    fn data_size_8bit() {
+        let mut session = new_session();
+        session.process(b"helo a.domain\r\n");
+        let res0 = session.process(b"mail from:<ship@sea.com> SIZE=100 body=8bitmime\r\n");
+        assert_eq!(res0.code, 250);
+        session.process(b"rcpt to:<fish@sea.com>\r\n");
+        let res1 = session.process(b"data\r\n");
+        assert_eq!(res1.code, 354);
+        // Send illegal utf-8 but valid 8bit mime
+        let res2 = session.process(b"Hello 8bit world \x40\x7f\r\n");
+        assert_eq!(res2.action, Action::NoReply);
+        let res3 = session.process(b".\r\n");
+        assert_eq!(res3.code, 250);
+        assert_state!(session.fsm.current_state(), SmtpState::Hello);
+    }
+
+    #[test]
+    fn data_size() {
+        let mut session = new_session();
+        session.process(b"helo a.domain\r\n");
+        let res0 = session.process(b"mail from:<ship@sea.com> size=100\r\n");
+        assert_eq!(res0.code, 250);
         session.process(b"rcpt to:<fish@sea.com>\r\n");
         let res1 = session.process(b"data\r\n");
         assert_eq!(res1.code, 354);

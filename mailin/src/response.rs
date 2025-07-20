@@ -43,6 +43,9 @@ pub(crate) const MISSING_PARAMETER: Response = Response::fixed(502, "Missing par
 pub(crate) const BAD_SEQUENCE_COMMANDS: Response = Response::fixed(503, "Bad sequence of commands");
 /// User storage quota exceeded
 pub const NO_STORAGE: Response = Response::fixed(552, "Exceeded storage allocation");
+/// Message size limit exceeded
+pub(crate) const MESSAGE_SIZE_LIMIT_EXCEEDED: Response =
+    Response::fixed(552, "Message size limit exceeded");
 /// Authentication required
 pub const AUTHENTICATION_REQUIRED: Response = Response::fixed(530, "Authentication required");
 /// Bad authentication attempt

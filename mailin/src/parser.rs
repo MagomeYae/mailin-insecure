@@ -1,13 +1,13 @@
 use nom::branch::alt;
 use nom::bytes::complete::{is_not, tag, tag_no_case, take_while1};
-use nom::character::is_alphanumeric;
+use nom::character::{is_alphanumeric, is_digit};
 use nom::combinator::{map, map_res, value};
 use nom::sequence::{pair, preceded, separated_pair, terminated};
-use nom::IResult;
+use nom::{IResult, Parser};
 
 use crate::response::*;
 use crate::smtp::{Cmd, Credentials};
-use std::str;
+use std::str::{self, from_utf8};
 
 //----- Parser -----------------------------------------------------------------
 
@@ -65,17 +65,35 @@ fn body_eq_8bit(buf: &[u8]) -> IResult<&[u8], bool> {
     preceded(preamble, is8bit)(buf)
 }
 
-fn is8bitmime(buf: &[u8]) -> IResult<&[u8], bool> {
-    body_eq_8bit(buf).or(Ok((buf, false)))
+fn message_size(buf: &[u8]) -> IResult<&[u8], usize> {
+    let preamble = pair(space, tag_no_case(b"size="));
+    preceded(preamble, |i| {
+        map_res(take_while1(is_digit), |s| match from_utf8(s) {
+            Ok(s) => str::parse(s).map_err(|_| ()),
+            Err(_) => Err(()),
+        })
+        .parse(i)
+    })(buf)
+}
+
+fn body_eq_8bit_and_message_size(buf: &[u8]) -> IResult<&[u8], (bool, Option<usize>)> {
+    alt((
+        |i| pair(body_eq_8bit, message_size)(i).map(|(i, (b, s))| (i, (b, Some(s)))),
+        |i| pair(message_size, body_eq_8bit)(i).map(|(i, (s, b))| (i, (b, Some(s)))),
+        |i| body_eq_8bit(i).map(|(i, b)| (i, (b, None))),
+        |i| message_size(i).map(|(i, s)| (i, (false, Some(s)))),
+        |i| Ok((i, (false, None))),
+    ))(buf)
 }
 
 fn mail(buf: &[u8]) -> IResult<&[u8], Cmd> {
     let preamble = pair(cmd(b"mail"), tag_no_case(b"from:<"));
     let mail_path_parser = preceded(preamble, mail_path);
-    let parser = separated_pair(mail_path_parser, tag(b">"), is8bitmime);
-    map(parser, |r| Cmd::Mail {
-        reverse_path: r.0,
-        is8bit: r.1,
+    let parser = separated_pair(mail_path_parser, tag(b">"), body_eq_8bit_and_message_size);
+    map(parser, |(reverse_path, (is8bit, size))| Cmd::Mail {
+        reverse_path,
+        is8bit,
+        size,
     })(buf)
 }
 
