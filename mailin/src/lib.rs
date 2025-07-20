@@ -325,13 +325,13 @@ mod tests {
             assert_eq!(session.process(&rcpt1), OK);
             assert_eq!(session.process(b"data\r\n"), START_DATA);
             assert_eq!(session.process(data), MESSAGE_SIZE_LIMIT_EXCEEDED);
-            assert_eq!(session.process(b".\r\n"), OK);
+            assert_eq!(session.process(b".\r\n"), EMPTY_RESPONSE);
         }
         assert!(handler.helo_called);
         assert!(handler.mail_called);
         assert!(handler.rcpt_called);
         assert!(handler.data_start_called);
         assert!(!handler.data_called);
-        assert!(handler.data_end_called);
+        assert!(!handler.data_end_called);
     }
 }
