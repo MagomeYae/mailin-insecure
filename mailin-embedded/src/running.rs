@@ -52,6 +52,9 @@ where
         TcpListener::bind(&addr[..])
             .map_err(|err| Error::with_source("Cannot open listen address", err))?
     };
+    if let Some(max_message_size) = config.max_message_size {
+        session_builder.max_message_size(max_message_size);
+    }
     let server_state = ServerState {
         listener: listen,
         handler: config.handler,
@@ -76,6 +79,9 @@ where
     }
     for auth in &config.auth {
         session_builder.enable_auth(auth.clone());
+    }
+    if let Some(max_message_size) = config.max_message_size {
+        session_builder.max_message_size(max_message_size);
     }
     info!("{} SMTP running", &config.name);
 

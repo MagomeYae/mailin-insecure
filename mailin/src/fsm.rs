@@ -260,7 +260,15 @@ impl<H: Handler> State<H> for Hello {
             Cmd::Mail {
                 reverse_path,
                 is8bit,
+                size,
             } => {
+                if let Some(max_message_size) = fsm.max_message_size {
+                    if let Some(size) = size {
+                        if size > max_message_size {
+                            return (MESSAGE_SIZE_LIMIT_EXCEEDED, Some(self));
+                        }
+                    }
+                }
                 let res = handler.mail(fsm.ip, &self.domain, reverse_path);
                 transform_state(self, res, |s| {
                     Box::new(Mail {
@@ -494,6 +502,7 @@ impl<H: Handler> State<H> for Rcpt {
                     Box::new(Data {
                         domain: s.domain,
                         has_error: false,
+                        size_allowed: fsm.max_message_size,
                     })
                 })
             }
@@ -521,6 +530,7 @@ impl<H: Handler> State<H> for Rcpt {
 struct Data {
     domain: String,
     has_error: bool,
+    size_allowed: Option<usize>,
 }
 
 impl<H: Handler> State<H> for Data {
@@ -564,6 +574,17 @@ impl<H: Handler> State<H> for Data {
             if line.starts_with(b".") {
                 line = &line[1..];
             }
+            if let Some(size) = &mut self.size_allowed {
+                match size.checked_sub(line.len()) {
+                    Some(new_size) => {
+                        *size = new_size;
+                    }
+                    None => {
+                        self.has_error = true;
+                        return Right(MESSAGE_SIZE_LIMIT_EXCEEDED);
+                    }
+                }
+            }
             match handler.data(line) {
                 Ok(_) => Right(EMPTY_RESPONSE),
                 Err(e) => {
@@ -586,6 +607,7 @@ pub(crate) struct StateMachine<H: Handler> {
     auth_plain: bool,
     auth_login: bool,
     insecure_allow_plaintext_auth: bool,
+    max_message_size: Option<usize>,
 }
 
 impl<H: Handler> StateMachine<H> {
@@ -594,6 +616,7 @@ impl<H: Handler> StateMachine<H> {
         auth_mechanisms: Vec<AuthMechanism>,
         allow_start_tls: bool,
         insecure_allow_plaintext_auth: bool,
+        max_message_size: Option<usize>,
     ) -> Self {
         let auth_state = ternary!(
             auth_mechanisms.is_empty(),
@@ -612,6 +635,7 @@ impl<H: Handler> StateMachine<H> {
             auth_plain,
             auth_login,
             insecure_allow_plaintext_auth,
+            max_message_size,
         }
     }
 
@@ -647,6 +671,9 @@ impl<H: Handler> StateMachine<H> {
 
     fn ehlo_response(&self) -> Response {
         let mut extensions = vec!["8BITMIME".to_string()];
+        if let Some(max_message_size) = self.max_message_size {
+            extensions.push(format!("SIZE {max_message_size}"));
+        }
         if self.tls == TlsState::Inactive {
             extensions.push("STARTTLS".to_string());
         }
