@@ -1,4 +1,5 @@
 use log::info;
+use mailin_embedded::Reason;
 use mime_event::MessageParser;
 use std::fmt::Debug;
 use std::fs;
@@ -69,6 +70,13 @@ impl MailStore {
                 commit_message(&state.path)
             })
             .unwrap_or(Ok(()))
+    }
+
+    pub fn end_error(&mut self, reason: Reason) {
+        if let Some(state) = self.state.take() {
+            info!("Aborting message due to {:#?}", reason);
+            _ = fs::remove_file(&state.path);
+        }
     }
 
     fn message_file(&self) -> String {

@@ -45,7 +45,7 @@ use crate::err::Error;
 pub use crate::ssl::SslConfig;
 pub use crate::stream::{Stdio, Stream};
 pub use mailin::response;
-pub use mailin::{Action, AuthMechanism, Handler, Response};
+pub use mailin::{Action, AuthMechanism, Handler, Reason, Response};
 use std::net::{IpAddr, SocketAddr, TcpListener, ToSocketAddrs};
 
 /// `Server` is used to configure and start the SMTP server

@@ -120,6 +120,13 @@ pub trait Handler {
         response::OK
     }
 
+    /// Called at the end of receiving data, when an error during data processing happened.
+    ///
+    /// This can be from an read/write error, eof, [`Self::data()`] returning an error or by the max-size limiter (if activated).
+    ///
+    /// Either [`Self::data_end()`] or [`Self::data_end_error()`] is called but never both.
+    fn data_end_error(&mut self, _reason: Reason) {}
+
     /// Called when a plain authentication request is received
     fn auth_plain(
         &mut self,
@@ -134,6 +141,20 @@ pub trait Handler {
     fn auth_login(&mut self, _username: &str, _password: &str) -> Response {
         response::INVALID_CREDENTIALS
     }
+}
+
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Reason for an error
+pub enum Reason {
+    /// Read/write error.
+    IoError,
+    /// The input closed.
+    Eof,
+    /// An error returned by [`Handler::data()`].
+    Processing,
+    /// The max size limit is exceeded (can only happen when activated).
+    MaxSizeExceeded,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
