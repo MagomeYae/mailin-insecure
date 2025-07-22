@@ -5,7 +5,7 @@ use anyhow::{anyhow, Context, Result};
 use getopts::Options;
 use log::error;
 use mailin_embedded::response::{BAD_HELLO, BLOCKED_IP, INTERNAL_ERROR, OK};
-use mailin_embedded::{Response, Server, SslConfig};
+use mailin_embedded::{Reason, Response, Server, SslConfig};
 use mxdns::MxDns;
 use simplelog::{
     ColorChoice, CombinedLogger, Config, LevelFilter, TermLogger, TerminalMode, WriteLogger,
@@ -86,6 +86,10 @@ impl mailin_embedded::Handler for Handler<'_> {
                 INTERNAL_ERROR
             }
         }
+    }
+
+    fn data_end_error(&mut self, reason: Reason) {
+        self.mailstore.end_error(reason)
     }
 }
 
