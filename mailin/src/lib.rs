@@ -266,22 +266,24 @@ mod tests {
         {
             let mut session = smtp::SessionBuilder::new("server.domain").build(ip, &mut handler);
             let helo = format!("helo {domain}\r\n").into_bytes();
-            session.process(&helo);
+            assert_eq!(session.process(&helo), OK);
             let mail = format!("mail from:<{from}> body=8bitmime\r\n").into_bytes();
-            session.process(&mail);
+            assert_eq!(session.process(&mail), OK);
             let rcpt0 = format!("rcpt to:<{}>\r\n", &to[0]).into_bytes();
             let rcpt1 = format!("rcpt to:<{}>\r\n", &to[1]).into_bytes();
-            session.process(&rcpt0);
-            session.process(&rcpt1);
-            session.process(b"data\r\n");
+            assert_eq!(session.process(&rcpt0), OK);
+            assert_eq!(session.process(&rcpt1), OK);
+            assert_eq!(session.process(b"data\r\n"), START_DATA);
             for line in data {
-                session.process(line);
+                assert_eq!(session.process(line), EMPTY_RESPONSE);
             }
-            session.process(b".\r\n");
+            assert_eq!(session.process(b".\r\n"), OK);
         }
         assert!(handler.helo_called);
         assert!(handler.mail_called);
         assert!(handler.rcpt_called);
+        assert!(handler.data_start_called);
         assert!(handler.data_called);
+        assert!(handler.data_end_called);
     }
 }
