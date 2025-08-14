@@ -264,24 +264,74 @@ mod tests {
             data_end_called: false,
         };
         {
-            let mut session = smtp::SessionBuilder::new("server.domain").build(ip, &mut handler);
+            let mut session = smtp::SessionBuilder::new("server.domain")
+                .max_message_size(data.iter().map(|line| line.len()).sum::<usize>())
+                .build(ip, &mut handler);
             let helo = format!("helo {domain}\r\n").into_bytes();
-            session.process(&helo);
+            assert_eq!(session.process(&helo), OK);
             let mail = format!("mail from:<{from}> body=8bitmime\r\n").into_bytes();
-            session.process(&mail);
+            assert_eq!(session.process(&mail), OK);
             let rcpt0 = format!("rcpt to:<{}>\r\n", &to[0]).into_bytes();
             let rcpt1 = format!("rcpt to:<{}>\r\n", &to[1]).into_bytes();
-            session.process(&rcpt0);
-            session.process(&rcpt1);
-            session.process(b"data\r\n");
+            assert_eq!(session.process(&rcpt0), OK);
+            assert_eq!(session.process(&rcpt1), OK);
+            assert_eq!(session.process(b"data\r\n"), START_DATA);
             for line in data {
-                session.process(line);
+                assert_eq!(session.process(line), EMPTY_RESPONSE);
             }
-            session.process(b".\r\n");
+            assert_eq!(session.process(b".\r\n"), OK);
         }
         assert!(handler.helo_called);
         assert!(handler.mail_called);
         assert!(handler.rcpt_called);
+        assert!(handler.data_start_called);
         assert!(handler.data_called);
+        assert!(handler.data_end_called);
+    }
+
+    #[test]
+    fn max_size() {
+        let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+        let domain = "some.domain";
+        let from = "ship@sea.com";
+        let to = vec!["fish@sea.com".to_owned(), "seaweed@sea.com".to_owned()];
+        let data = b"Hello 8bit world \x40\x7f -- Hello again\r\n";
+        let mut handler = TestHandler {
+            ip,
+            domain: domain.to_owned(),
+            from: from.to_owned(),
+            to: to.clone(),
+            is8bit: true,
+            expected_data: Vec::new(),
+            cursor: Cursor::new(Vec::with_capacity(80)),
+            helo_called: false,
+            mail_called: false,
+            rcpt_called: false,
+            data_called: false,
+            data_start_called: false,
+            data_end_called: false,
+        };
+        {
+            let mut session = smtp::SessionBuilder::new("server.domain")
+                .max_message_size(data.len() - 1)
+                .build(ip, &mut handler);
+            let helo = format!("helo {domain}\r\n").into_bytes();
+            assert_eq!(session.process(&helo), OK);
+            let mail = format!("mail from:<{from}> body=8bitmime\r\n").into_bytes();
+            assert_eq!(session.process(&mail), OK);
+            let rcpt0 = format!("rcpt to:<{}>\r\n", &to[0]).into_bytes();
+            let rcpt1 = format!("rcpt to:<{}>\r\n", &to[1]).into_bytes();
+            assert_eq!(session.process(&rcpt0), OK);
+            assert_eq!(session.process(&rcpt1), OK);
+            assert_eq!(session.process(b"data\r\n"), START_DATA);
+            assert_eq!(session.process(data), MESSAGE_SIZE_LIMIT_EXCEEDED);
+            assert_eq!(session.process(b".\r\n"), OK);
+        }
+        assert!(handler.helo_called);
+        assert!(handler.mail_called);
+        assert!(handler.rcpt_called);
+        assert!(handler.data_start_called);
+        assert!(!handler.data_called);
+        assert!(handler.data_end_called);
     }
 }

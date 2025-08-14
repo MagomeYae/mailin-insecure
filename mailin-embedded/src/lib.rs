@@ -60,6 +60,7 @@ where
     auth: Vec<AuthMechanism>,
     tcp_listener: Option<TcpListener>,
     socket_address: Vec<SocketAddr>,
+    max_message_size: Option<usize>,
 }
 
 impl<H> Server<H>
@@ -76,6 +77,7 @@ where
             auth: Vec::with_capacity(4),
             tcp_listener: None,
             socket_address: Vec::with_capacity(4),
+            max_message_size: None,
         }
     }
 
@@ -133,6 +135,15 @@ where
             self.socket_address.push(addr);
         }
         Ok(self)
+    }
+
+    /// Specify a maximum message size.
+    ///
+    /// Will be reported to the client on helo/ehlo and will cause
+    /// to fail when receiving too much data.
+    pub fn with_max_message_size(&mut self, max_size: usize) -> &mut Self {
+        self.max_message_size = Some(max_size);
+        self
     }
 
     /// Start the SMTP server and run forever
