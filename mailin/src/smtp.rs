@@ -201,6 +201,16 @@ impl<H: Handler> Session<H> {
         response
     }
 
+    /// Called in case a read/write error happens.
+    pub fn io_error(&mut self) {
+        self.fsm.io_error(&mut self.handler)
+    }
+
+    /// Called in case a eof happens.
+    pub fn eof(&mut self) {
+        self.fsm.eof(&mut self.handler)
+    }
+
     fn command(&mut self, cmd: Cmd) -> Response {
         self.fsm.command(&mut self.handler, cmd)
     }

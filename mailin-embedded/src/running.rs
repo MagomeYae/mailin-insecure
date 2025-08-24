@@ -132,17 +132,19 @@ where
     let mut line = Vec::with_capacity(80);
     loop {
         line.clear();
-        let num_bytes = stream.read_until(b'\n', &mut line)?;
+        let num_bytes = stream
+            .read_until(b'\n', &mut line)
+            .inspect_err(|_| session.io_error())?;
         if num_bytes == 0 {
             break;
         }
         let res = session.process(&line);
         match res.action {
             Action::Reply => {
-                write_response(stream, &res)?;
+                write_response(stream, &res).inspect_err(|_| session.io_error())?;
             }
             Action::Close => {
-                write_response(stream, &res)?;
+                write_response(stream, &res).inspect_err(|_| session.io_error())?;
                 if res.is_error {
                     return Error::bail("SMTP error");
                 } else {
@@ -150,12 +152,13 @@ where
                 }
             }
             Action::UpgradeTls => {
-                write_response(stream, &res)?;
+                write_response(stream, &res).inspect_err(|_| session.io_error())?;
                 return Ok(SessionResult::UpgradeTls);
             }
             Action::NoReply => (),
         }
     }
+    session.eof();
     Error::bail("Unexpected Eof")
 }
 
