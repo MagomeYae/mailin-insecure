@@ -1,4 +1,4 @@
-FROM rust:latest as build-env
+FROM rust:bookworm as build-env
 WORKDIR /app
 COPY . /app
 RUN mkdir -p /mailin
