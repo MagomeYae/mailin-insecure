@@ -12,7 +12,7 @@ use std::str::{self, from_utf8};
 //----- Parser -----------------------------------------------------------------
 
 // Parse a line from the client
-pub fn parse(line: &[u8]) -> Result<Cmd, Response> {
+pub fn parse(line: &[u8]) -> Result<Cmd<'_>, Response> {
     command(line).map(|r| r.1).map_err(|e| match e {
         nom::Err::Incomplete(_) => MISSING_PARAMETER,
         nom::Err::Error(_) => SYNTAX_ERROR,
@@ -25,7 +25,7 @@ pub fn parse_auth_response(line: &[u8]) -> Result<&[u8], Response> {
     auth_response(line).map(|r| r.1).map_err(|_| SYNTAX_ERROR)
 }
 
-fn command(buf: &[u8]) -> IResult<&[u8], Cmd> {
+fn command(buf: &[u8]) -> IResult<&[u8], Cmd<'_>> {
     terminated(
         alt((
             helo, ehlo, mail, rcpt, data, rset, quit, vrfy, noop, starttls, auth,
@@ -38,12 +38,12 @@ fn hello_domain(buf: &[u8]) -> IResult<&[u8], &str> {
     map_res(is_not(b" \t\r\n" as &[u8]), str::from_utf8)(buf)
 }
 
-fn helo(buf: &[u8]) -> IResult<&[u8], Cmd> {
+fn helo(buf: &[u8]) -> IResult<&[u8], Cmd<'_>> {
     let parse_domain = preceded(cmd(b"helo"), hello_domain);
     map(parse_domain, |domain| Cmd::Helo { domain })(buf)
 }
 
-fn ehlo(buf: &[u8]) -> IResult<&[u8], Cmd> {
+fn ehlo(buf: &[u8]) -> IResult<&[u8], Cmd<'_>> {
     let parse_domain = preceded(cmd(b"ehlo"), hello_domain);
     map(parse_domain, |domain| Cmd::Ehlo { domain })(buf)
 }
@@ -86,7 +86,7 @@ fn body_eq_8bit_and_message_size(buf: &[u8]) -> IResult<&[u8], (bool, Option<usi
     ))(buf)
 }
 
-fn mail(buf: &[u8]) -> IResult<&[u8], Cmd> {
+fn mail(buf: &[u8]) -> IResult<&[u8], Cmd<'_>> {
     let preamble = pair(cmd(b"mail"), tag_no_case(b"from:<"));
     let mail_path_parser = preceded(preamble, mail_path);
     let parser = separated_pair(mail_path_parser, tag(b">"), body_eq_8bit_and_message_size);
@@ -97,35 +97,35 @@ fn mail(buf: &[u8]) -> IResult<&[u8], Cmd> {
     })(buf)
 }
 
-fn rcpt(buf: &[u8]) -> IResult<&[u8], Cmd> {
+fn rcpt(buf: &[u8]) -> IResult<&[u8], Cmd<'_>> {
     let preamble = pair(cmd(b"rcpt"), tag_no_case(b"to:<"));
     let mail_path_parser = preceded(preamble, mail_path);
     let parser = terminated(mail_path_parser, tag(b">"));
     map(parser, |path| Cmd::Rcpt { forward_path: path })(buf)
 }
 
-fn data(buf: &[u8]) -> IResult<&[u8], Cmd> {
+fn data(buf: &[u8]) -> IResult<&[u8], Cmd<'_>> {
     value(Cmd::Data, tag_no_case(b"data"))(buf)
 }
 
-fn rset(buf: &[u8]) -> IResult<&[u8], Cmd> {
+fn rset(buf: &[u8]) -> IResult<&[u8], Cmd<'_>> {
     value(Cmd::Rset, tag_no_case(b"rset"))(buf)
 }
 
-fn quit(buf: &[u8]) -> IResult<&[u8], Cmd> {
+fn quit(buf: &[u8]) -> IResult<&[u8], Cmd<'_>> {
     value(Cmd::Quit, tag_no_case(b"quit"))(buf)
 }
 
-fn vrfy(buf: &[u8]) -> IResult<&[u8], Cmd> {
+fn vrfy(buf: &[u8]) -> IResult<&[u8], Cmd<'_>> {
     let preamble = preceded(cmd(b"vrfy"), take_all);
     value(Cmd::Vrfy, preamble)(buf)
 }
 
-fn noop(buf: &[u8]) -> IResult<&[u8], Cmd> {
+fn noop(buf: &[u8]) -> IResult<&[u8], Cmd<'_>> {
     value(Cmd::Noop, tag_no_case(b"noop"))(buf)
 }
 
-fn starttls(buf: &[u8]) -> IResult<&[u8], Cmd> {
+fn starttls(buf: &[u8]) -> IResult<&[u8], Cmd<'_>> {
     value(Cmd::StartTls, tag_no_case(b"starttls"))(buf)
 }
 
@@ -145,17 +145,17 @@ fn empty(buf: &[u8]) -> IResult<&[u8], &[u8]> {
     Ok((buf, b"" as &[u8]))
 }
 
-fn auth_plain(buf: &[u8]) -> IResult<&[u8], Cmd> {
+fn auth_plain(buf: &[u8]) -> IResult<&[u8], Cmd<'_>> {
     let parser = preceded(tag_no_case(b"plain"), alt((auth_initial, empty)));
     map(parser, sasl_plain_cmd)(buf)
 }
 
-fn auth_login(buf: &[u8]) -> IResult<&[u8], Cmd> {
+fn auth_login(buf: &[u8]) -> IResult<&[u8], Cmd<'_>> {
     let parser = preceded(tag_no_case(b"login"), alt((auth_initial, empty)));
     map(parser, sasl_login_cmd)(buf)
 }
 
-fn auth(buf: &[u8]) -> IResult<&[u8], Cmd> {
+fn auth(buf: &[u8]) -> IResult<&[u8], Cmd<'_>> {
     preceded(cmd(b"auth"), alt((auth_plain, auth_login)))(buf)
 }
 
@@ -173,7 +173,7 @@ fn space(buf: &[u8]) -> IResult<&[u8], &[u8]> {
     take_while1(|b| b == b' ')(buf)
 }
 
-fn sasl_plain_cmd(param: &[u8]) -> Cmd {
+fn sasl_plain_cmd(param: &[u8]) -> Cmd<'_> {
     if param.is_empty() {
         Cmd::AuthPlainEmpty
     } else {
@@ -186,7 +186,7 @@ fn sasl_plain_cmd(param: &[u8]) -> Cmd {
     }
 }
 
-fn sasl_login_cmd(param: &[u8]) -> Cmd {
+fn sasl_login_cmd(param: &[u8]) -> Cmd<'_> {
     if param.is_empty() {
         Cmd::AuthLoginEmpty
     } else {

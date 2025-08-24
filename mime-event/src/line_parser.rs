@@ -10,7 +10,7 @@ use std::io;
 
 // Parse a header line.
 // The result type must be io::Result to be compatible with io::Write()
-pub(crate) fn header(line: &[u8]) -> io::Result<Header> {
+pub(crate) fn header(line: &[u8]) -> io::Result<Header<'_>> {
     let res = alt((
         header_end,
         content,
@@ -34,7 +34,7 @@ pub(crate) fn header(line: &[u8]) -> io::Result<Header> {
     }
 }
 
-fn content(buf: &[u8]) -> IResult<&[u8], Header> {
+fn content(buf: &[u8]) -> IResult<&[u8], Header<'_>> {
     map(header_with_params(b"Content-Type"), |v| {
         Header::ContentType {
             mime_type: v.0,
@@ -43,7 +43,7 @@ fn content(buf: &[u8]) -> IResult<&[u8], Header> {
     })(buf)
 }
 
-fn content_disposition(buf: &[u8]) -> IResult<&[u8], Header> {
+fn content_disposition(buf: &[u8]) -> IResult<&[u8], Header<'_>> {
     map(header_with_params(b"Content-Disposition"), |v| {
         Header::ContentDisposition {
             disposition_type: v.0,
@@ -151,41 +151,41 @@ fn match_unstructured(header: &[u8]) -> impl Fn(&[u8]) -> IResult<&[u8], &[u8]> 
     }
 }
 
-fn from(buf: &[u8]) -> IResult<&[u8], Header> {
+fn from(buf: &[u8]) -> IResult<&[u8], Header<'_>> {
     map(match_unstructured(b"From"), Header::From)(buf)
 }
 
-fn to(buf: &[u8]) -> IResult<&[u8], Header> {
+fn to(buf: &[u8]) -> IResult<&[u8], Header<'_>> {
     map(match_unstructured(b"To"), Header::To)(buf)
 }
 
-fn subject(buf: &[u8]) -> IResult<&[u8], Header> {
+fn subject(buf: &[u8]) -> IResult<&[u8], Header<'_>> {
     map(match_unstructured(b"Subject"), Header::Subject)(buf)
 }
 
-fn sender(buf: &[u8]) -> IResult<&[u8], Header> {
+fn sender(buf: &[u8]) -> IResult<&[u8], Header<'_>> {
     map(match_unstructured(b"Sender"), Header::Sender)(buf)
 }
 
-fn reply_to(buf: &[u8]) -> IResult<&[u8], Header> {
+fn reply_to(buf: &[u8]) -> IResult<&[u8], Header<'_>> {
     map(match_unstructured(b"Reply-To"), Header::ReplyTo)(buf)
 }
 
-fn message_id(buf: &[u8]) -> IResult<&[u8], Header> {
+fn message_id(buf: &[u8]) -> IResult<&[u8], Header<'_>> {
     map(match_unstructured(b"Message-ID"), Header::MessageId)(buf)
 }
 
-fn date(buf: &[u8]) -> IResult<&[u8], Header> {
+fn date(buf: &[u8]) -> IResult<&[u8], Header<'_>> {
     map(match_unstructured(b"Date"), Header::Date)(buf)
 }
 
-fn content_description(buf: &[u8]) -> IResult<&[u8], Header> {
+fn content_description(buf: &[u8]) -> IResult<&[u8], Header<'_>> {
     map(match_unstructured(b"Content-Description"), |v| {
         Header::ContentDescription(v)
     })(buf)
 }
 
-fn unstructured(buf: &[u8]) -> IResult<&[u8], Header> {
+fn unstructured(buf: &[u8]) -> IResult<&[u8], Header<'_>> {
     let (i, key) = terminated(header_key, colon_space)(buf)?;
     let (i, value) = terminated(unstructured_value, tag(b"\r\n"))(i)?;
     Ok((i, Header::Unstructured(key, value)))
@@ -199,7 +199,7 @@ fn unstructured_value(buf: &[u8]) -> IResult<&[u8], &[u8]> {
     is_not("\r\n")(buf)
 }
 
-fn header_end(buf: &[u8]) -> IResult<&[u8], Header> {
+fn header_end(buf: &[u8]) -> IResult<&[u8], Header<'_>> {
     map(tag(b"\r\n"), |_| Header::End)(buf)
 }
 
