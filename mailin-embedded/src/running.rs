@@ -43,7 +43,9 @@ where
         session_builder.enable_start_tls();
     }
     for auth in &config.auth {
-        session_builder.enable_auth(auth.clone());
+        session_builder
+            .enable_auth(auth.clone())
+            .insecure_enable_plaintext_auth();
     }
     let listen = if let Some(listener) = config.tcp_listener {
         listener
